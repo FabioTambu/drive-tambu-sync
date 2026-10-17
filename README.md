@@ -1,0 +1,151 @@
+# Drive Tambu 2.0 - prima base di sviluppo
+
+Drive Tambu e un'app desktop multipiattaforma (Windows + Linux) per rendere accessibili sul computer cartelle che restano sul server Ubuntu, usando rclone. Interfaccia in React + TypeScript, processo desktop in Electron, backup in una cartella locale separata.
+
+> Stato: **anteprima tecnica / MVP 0.1.0**. Questo archivio contiene il codice sorgente, non un installer gia compilato. Le build native e i montaggi devono ancora essere provati su un vero PC Windows e su Linux. Non sostituisce la precedente app PowerShell: installala e provala separatamente.
+
+## Requisiti
+
+- Node.js 22 o successivo (per sviluppo e build).
+- rclone installato e disponibile sul PATH oppure indicando il percorso dell'eseguibile nelle impostazioni.
+- Windows: WinFsp installato (https://winfsp.dev/).
+- Linux desktop: FUSE / `fusermount3` disponibile, e permessi per eseguire mount.
+- Per usare Cloudflare Tunnel + SSH: OpenSSH, cloudflared e una configurazione `~/.ssh/config` funzionante **sul PC dove gira Drive Tambu**.
+
+L'installer **non include** ancora rclone, WinFsp, OpenSSH o cloudflared; questi componenti devono essere installati separatamente. Il server Ubuntu e i tunnel non richiedono modifiche se il collegamento SSH gia funziona.
+
+## Avvio per sviluppare
+
+Apri il terminale nella directory di questo progetto:
+
+```bash
+npm install
+npm run dev
+```
+
+Se vuoi verificare il codice prima del pacchetto:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+> Non e stato possibile eseguire `npm install` nell'ambiente di generazione di questo progetto. Il codice e stato verificato staticamente ma le dipendenze Electron, le build e i montaggi reali richiedono il test nel tuo ambiente / in GitHub Actions.
+
+## Usare il server con Cloudflare Tunnel
+
+La configurazione SSH sul computer deve funzionare **senza chiedere password e senza finestre di login interattive**:
+
+```bash
+ssh ssh.tamburini.dev
+```
+
+Per esempio, l'host puo avere una voce in `~/.ssh/config` simile a questa, da adattare alla tua configurazione reale:
+
+```sshconfig
+Host ssh.tamburini.dev
+    User NOME_UTENTE
+    IdentityFile ~/.ssh/id_ed25519
+    ProxyCommand cloudflared access ssh --hostname %h
+```
+
+Poi configura un remote **SFTP con SSH esterno** in `rclone config`:
+
+```ini
+[server]
+type = sftp
+ssh = ssh ssh.tamburini.dev
+```
+
+Questo sfrutta OpenSSH e il suo `ProxyCommand` gia configurato; rclone non apre nuove porte sul modem. Testalo prima di aggiungerlo all'app:
+
+```bash
+rclone lsf server:/home/server
+```
+
+La stringa `ssh` di rclone non chiede password: occorre una chiave SSH funzionante. Se il tunnel richiede autenticazioni browser, va risolta la modalita non interattiva prima di abilitare l'avvio automatico.
+
+## Aggiungere una cartella
+
+1. Apri Drive Tambu e premi **Nuova cartella**.
+2. Dai un nome, seleziona il remote rclone (es. `server`) e indica il percorso remoto Unix effettivo.
+3. Seleziona la **cartella superiore** sul PC: Drive Tambu propone un percorso finale con il nome della cartella.
+4. Salva, premi **Collega** e verifica che diventi **Collegata**. Premi **Apri** per visualizzare i file.
+
+### Differenze tra Windows e Linux
+
+- Windows: il percorso finale da montare **non deve esistere**. Deve esistere soltanto la directory superiore. Il filesystem resta visto tecnicamente come mount rclone, ma e accessibile come normale sottocartella da Esplora file. Occorre WinFsp.
+- Linux: il percorso finale deve essere una directory **vuota**; l'app puo crearla. Occorre FUSE.
+- Non spostare file nella cartella remota prima che appaia lo stato **Collegata**, e non considerare la cache locale come un backup.
+
+## Backup
+
+In modifica cartella puoi abilitare un backup **dal server verso il PC** e impostare intervallo e conservazione delle versioni. Scegli una destinazione locale dedicata, **vuota**, oppure inesistente, non dentro nessuna cartella montata.
+
+La prima volta l'app crea il file `.drive-tambu-backup.json` per marcare la directory come gestita: se la cartella contiene dati sconosciuti, il backup viene bloccato per precauzione.
+
+Struttura:
+
+```text
+BackupDocumenti/
+  .drive-tambu-backup.json
+  corrente/                 # specchio dei file del server
+  archivio/
+    2026-10-17_143000/     # versioni sostituite o eliminate
+```
+
+Il backup esegue `rclone sync` dalla sorgente remota verso `corrente` e sposta in `archivio` i file che verrebbero modificati o eliminati con `--backup-dir`. Esegue prima un controllo di raggiungibilita del remote; blocca una sorgente improvvisamente vuota quando esistono gia file in `corrente`. Non carica nulla verso il server. La pulizia dell'archivio si svolge solo dopo un backup concluso correttamente. L'app deve essere aperta, anche nell'area di notifica, per i backup programmati.
+
+**Attenzione:** `sync` puo modificare/eliminare i file in `corrente` (salvando quelli precedenti nell'archivio). Testa sempre prima con una cartella di prova, specialmente se intendi usare la pulizia automatica. I backup locali non sostituiscono una strategia di backup off-site/3-2-1.
+
+## Build Windows e Linux
+
+Localmente su Windows:
+
+```bash
+npm run dist:win
+```
+
+Localmente su Linux:
+
+```bash
+npm run dist:linux
+```
+
+I pacchetti vengono creati in `release/`. Le build native sono separate per Windows e Linux.
+
+Con GitHub Actions: crea un repository, carica i file, apri la sezione **Actions** e avvia **Build Drive Tambu**. Le build vengono caricate come artifact scaricabili. Quando crei un tag `v0.1.0`, dopo build riuscite, vengono allegate a una GitHub Release. Non caricare chiavi SSH o file `rclone.conf` sul repository.
+
+## Cosa funziona nella prima base
+
+- Interfaccia italiana rinnovata, con libreria cartelle, riepilogo, attivita e impostazioni.
+- Salvataggio configurazione JSON locale e modifiche ai collegamenti.
+- Elenco dei remote rclone esistenti e diagnostica.
+- Montaggio/smontaggio rclone con rilevamento del filesystem, avvio automatico delle cartelle configurate, icona tray.
+- Backup manuali e programmati, archivio versioni e retention, con protezione della destinazione.
+- GitHub Actions per NSIS `.exe`, `.deb` e `.AppImage`.
+
+## Cosa manca ancora / da verificare
+
+- Test end-to-end Windows con WinFsp, Windows Defender, rinomina e backup su un server reale.
+- Test su Linux desktop con FUSE nelle varie distribuzioni.
+- Gestione di migrazione automatica dalla versione PowerShell (non disponibile senza i file reali attuali).
+- Firma digitale Windows, aggiornamenti automatici, installazione guidata delle dipendenze, notifiche native e test automatizzati d'integrazione.
+- Supporto macOS non incluso in questa prima base.
+
+## Dove vengono salvati i dati
+
+Electron salva `config.json` nella directory userData dell'app; il contenuto comprende percorsi, impostazioni e tempi dei backup, **non chiavi SSH o password**. Le credenziali restano a OpenSSH/rclone sul PC. L'attivita mostrata nell'app e limitata alla sessione.
+
+## Struttura
+
+```text
+src/main/             Processo principale: rclone, backup, configurazione, IPC
+src/preload/          API tipizzate e limitate verso React
+src/renderer/         React e CSS, nessun accesso Node diretto
+src/shared/           Tipi TypeScript condivisi
+.github/workflows/   Build Windows e Linux
+resources/           Icona originale Drive Tambu
+```
+
+Progetto iniziale. Prima di usare cartelle importanti, fare un test con dati sacrificabili e verificare i log e i backup.
