@@ -2,8 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ConnectionStatus, MountConfig } from '../shared/types'
-import { ConfigStore } from './store'
-import { remoteSpec } from './diagnostics'
+import { ConfigStore, validateMount } from './store'
+import { checkRemoteDirectory, connectionError, errorDetails, remoteSpec, resolveRcloneExecutable, SFTP_FLAGS, stopChild, ConnectionError } from './diagnostics'
 
 type RuntimeMount = {
   status: ConnectionStatus
@@ -11,6 +11,7 @@ type RuntimeMount = {
   child?: ChildProcess
   interval?: NodeJS.Timeout
   stopping?: boolean
+  abort?: AbortController
 }
 
 function isLinuxMounted(mountPoint: string): boolean {
@@ -54,95 +55,97 @@ export class MountManager {
 
   async connect(id: string): Promise<void> {
     const active = this.mounts.get(id)
-    if (active?.child && active.status !== 'error') return
-    if (active?.child) throw new Error('Un processo rclone e ancora attivo per questa cartella.')
-    const m: MountConfig = this.store.find(id)
-    prepareMountPath(m.localPath)
-    const s: RuntimeMount = { status: 'connecting', detail: 'Connessione al server...' }
+    if (active && ['connecting', 'connected', 'disconnecting'].includes(active.status)) return
+    if (active?.child) throw new Error('La cartella si sta ancora scollegando. Attendi prima di riprovare.')
+    const m = validateMount(this.store.find(id), this.store.mounts)
+    const s: RuntimeMount = { status: 'connecting', detail: 'Verifica della cartella sul server...', abort: new AbortController() }
     this.mounts.set(id, s)
     this.changed()
-    const args = [
-      'mount', remoteSpec(m.remote, m.remotePath), m.localPath,
-      '--vfs-cache-mode', 'full',
-      '--vfs-cache-max-size', this.store.settings.cacheMaxSize,
-      '--vfs-cache-max-age', '24h',
-      '--vfs-write-back', '10s',
-      '--dir-cache-time', '2m',
-      '--log-level', 'NOTICE'
-    ]
     try {
-      const proc = spawn(this.store.settings.rcloneExecutable, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      await checkRemoteDirectory(this.store.settings.rcloneExecutable, m.remote, m.remotePath, s.abort?.signal)
+      if (s.stopping || s.abort?.signal.aborted || this.mounts.get(id) !== s) return
+      prepareMountPath(m.localPath)
+      s.detail = 'Server raggiunto. Collegamento della cartella al computer...'
+      this.changed()
+      const args = [
+        'mount', remoteSpec(m.remote, m.remotePath), m.localPath,
+        '--vfs-cache-mode', 'full', '--vfs-cache-max-size', this.store.settings.cacheMaxSize,
+        '--vfs-cache-max-age', '24h', '--vfs-write-back', '10s', '--dir-cache-time', '2m',
+        '--contimeout', '15s', '--log-level', 'NOTICE', ...SFTP_FLAGS
+      ]
+      const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, {
+        shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe']
+      })
       s.child = proc
       let lastMessage = ''
       const output = (chunk: Buffer): void => {
-        const lines = chunk.toString('utf8').trim().split(/\r?\n/)
-        for (const line of lines) {
-          if (!line) continue
-          lastMessage = line.slice(-260)
-          if (/ERROR|failed|fatal|NOTICE/i.test(line)) this.log(`${m.name}: ${line.slice(0, 400)}`)
+        for (const line of chunk.toString('utf8').trim().split(/\r?\n/)) {
+          if (/ERROR|failed|fatal/i.test(line)) lastMessage = line.slice(-1200)
+          if (/ERROR|failed|fatal|NOTICE/i.test(line)) this.log(`${m.name}: ${errorDetails(new Error(line))}`)
         }
       }
       proc.stdout?.on('data', output)
       proc.stderr?.on('data', output)
-      const end = (err?: string): void => {
+      const end = (error?: unknown): void => {
         if (s.interval) clearInterval(s.interval)
-        s.interval = undefined
-        s.child = undefined
+        s.interval = undefined; s.child = undefined
+        if (this.mounts.get(id) !== s) return
         const priorError = s.status === 'error' ? s.detail : ''
         s.status = s.stopping ? 'disconnected' : 'error'
-        s.detail = s.stopping ? 'Non collegata' : (priorError || err || lastMessage || 'rclone si e interrotto')
-        if (!s.stopping) this.log(`${m.name}: ${s.detail}`)
+        s.detail = s.stopping ? 'Non collegata' : (priorError || connectionError(error || new Error(lastMessage || 'Il processo di collegamento si e interrotto.')).message)
+        if (!s.stopping) this.log(`${m.name}: ${s.detail} Dettagli: ${errorDetails(error || new Error(lastMessage))}`)
         this.changed()
       }
-      proc.once('error', error => end(error.message))
-      proc.once('close', code => { if (s.child === proc) end(`rclone terminato (${code ?? '?'})`) })
+      proc.once('error', error => end(error))
+      proc.once('close', code => { if (s.child === proc) end(new Error(lastMessage || `Il processo si e interrotto (codice ${code ?? '?'}).`)) })
       const start = Date.now()
       s.interval = setInterval(() => {
         if (!s.child || s.stopping) return
         if (isReady(m.localPath)) {
-          clearInterval(s.interval)
-          s.interval = undefined
-          s.status = 'connected'
-          s.detail = 'Cartella pronta'
-          this.changed()
-          this.log(`${m.name}: collegata`)
-        } else if (Date.now() - start > 90000) {
-          s.detail = 'Timeout: controlla rclone e la connessione SSH'
-          s.status = 'error'
-          this.changed()
-          proc.kill()
+          clearInterval(s.interval); s.interval = undefined
+          s.status = 'connected'; s.detail = 'Cartella pronta'
+          this.changed(); this.log(`${m.name}: collegata`)
+        } else if (Date.now() - start > 45000) {
+          s.detail = 'Il server risponde, ma la cartella non e diventata disponibile sul computer. Controlla i componenti di collegamento nelle Impostazioni.'
+          s.status = 'error'; this.changed(); stopChild(proc, true)
         }
       }, 700)
     } catch (error) {
-      s.status = 'error'
-      s.detail = error instanceof Error ? error.message : String(error)
-      s.child = undefined
+      if (this.mounts.get(id) !== s) return
+      const cancelled = s.stopping || (error instanceof ConnectionError && error.code === 'cancelled')
+      s.status = cancelled ? 'disconnected' : 'error'
+      s.detail = cancelled ? 'Non collegata' : (error instanceof Error ? error.message : String(error))
       this.changed()
-      throw error
+      if (!cancelled) { this.log(`${m.name}: ${s.detail} Dettagli: ${errorDetails(error)}`); throw error }
     }
   }
 
   async disconnect(id: string): Promise<void> {
     const s = this.mounts.get(id)
-    if (!s?.child) {
-      this.mounts.set(id, { status: 'disconnected', detail: 'Non collegata' })
-      this.changed()
-      return
-    }
+    if (!s) return
     s.stopping = true
-    s.detail = 'Disconnessione in corso...'
-    this.changed()
+    s.abort?.abort()
+    if (s.interval) { clearInterval(s.interval); s.interval = undefined }
+    if (!s.child) {
+      s.status = 'disconnected'; s.detail = 'Non collegata'; this.changed(); return
+    }
+    s.status = 'disconnecting'; s.detail = 'Disconnessione in corso...'; this.changed()
     const child = s.child
-    try { child.kill('SIGTERM') } catch { /* process might already be closed */ }
-    await new Promise<void>(resolve => {
+    const stopped = new Promise<void>(resolve => {
       if (!s.child) { resolve(); return }
       const timeout = setTimeout(resolve, 4500)
       child.once('close', () => { clearTimeout(timeout); resolve() })
     })
-    if (s.child) throw new Error('rclone non si e fermato. Controlla se il montaggio e ancora attivo.')
+    stopChild(child)
+    await stopped
+    if (s.child) {
+      s.status = 'error'; s.detail = 'La cartella non si e ancora scollegata. Attendi la fine dei trasferimenti e riprova.'
+      this.changed(); throw new Error(s.detail)
+    }
   }
 
   async disconnectAll(): Promise<void> {
-    await Promise.allSettled([...this.mounts.keys()].map(id => this.disconnect(id)))
+    const results = await Promise.allSettled([...this.mounts.keys()].map(id => this.disconnect(id)))
+    if (results.some(r => r.status === 'rejected')) throw new Error('Alcune cartelle sono ancora in uso. Chiudi i file aperti e riprova.')
   }
 }

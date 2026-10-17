@@ -1,7 +1,8 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, copyFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { AppSettings, MountConfig, StoredConfig } from '../shared/types'
+import { normalizeRemotePath } from '../shared/paths'
 
 const defaults = (): StoredConfig => ({
   schemaVersion: 1,
@@ -9,50 +10,59 @@ const defaults = (): StoredConfig => ({
     rcloneExecutable: 'rclone',
     cacheMaxSize: '5G',
     startAtLogin: false,
-    closeToTray: true
+    closeToTray: true,
+    theme: 'system',
+    defaultRemote: ''
   },
   mounts: []
 })
 
+function canonicalLocal(value: string): string {
+  let ancestor = path.resolve(value)
+  const suffix: string[] = []
+  while (!existsSync(ancestor) && path.dirname(ancestor) !== ancestor) { suffix.unshift(path.basename(ancestor)); ancestor = path.dirname(ancestor) }
+  return path.join(realpathSync(ancestor), ...suffix)
+}
+
 const inside = (child: string, parent: string): boolean => {
-  const a = path.resolve(child)
-  const b = path.resolve(parent)
+  const a = canonicalLocal(child)
+  const b = canonicalLocal(parent)
   const rel = path.relative(process.platform === 'win32' ? b.toLowerCase() : b,
     process.platform === 'win32' ? a.toLowerCase() : a)
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel))
 }
 
-function validateMount(value: MountConfig, all: MountConfig[]): MountConfig {
+export function validateMount(value: MountConfig, all: MountConfig[]): MountConfig {
+  if (!value || typeof value !== 'object') throw new Error('Dati della cartella non validi.')
   const m = structuredClone(value)
   if (!m.id || !/^[a-zA-Z0-9-]{6,80}$/.test(m.id)) throw new Error('Identificativo della cartella non valido.')
-  if (!m.name?.trim() || m.name.length > 80) throw new Error('Inserisci un nome breve per la cartella.')
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(m.remote ?? '')) throw new Error('Inserisci un remote rclone valido, senza due punti o spazi.')
-  if (!m.remotePath?.trim() || /[\r\n\0]/.test(m.remotePath)) throw new Error('Inserisci il percorso sul server.')
+  if (typeof m.name !== 'string' || !m.name.trim() || m.name.length > 80) throw new Error('Inserisci un nome breve per la cartella.')
+  m.remotePath = normalizeRemotePath(m.remote, m.remotePath)
   if (!path.isAbsolute(m.localPath ?? '')) throw new Error('La cartella locale deve avere un percorso assoluto.')
   m.name = m.name.trim()
   m.localPath = path.resolve(m.localPath)
-  m.remotePath = m.remotePath.trim()
+  if (m.localPath === path.parse(m.localPath).root) throw new Error('Non puoi usare la radice del sistema come cartella collegata.')
   m.autoConnect = Boolean(m.autoConnect)
   const b = m.backup
   if (!b || typeof b !== 'object') throw new Error('Configurazione backup mancante.')
-  if (!Number.isInteger(b.intervalMinutes) || b.intervalMinutes < 0) throw new Error('Intervallo backup non valido.')
+  if (!Number.isInteger(b.intervalMinutes) || b.intervalMinutes < 0 || b.intervalMinutes > 525600 || (b.intervalMinutes > 0 && b.intervalMinutes < 5)) throw new Error('Intervallo backup non valido.')
   if (!Number.isInteger(b.retentionDays) || b.retentionDays < 0 || b.retentionDays > 36500) throw new Error('Giorni di conservazione non validi.')
   if (b.enabled) {
     if (!path.isAbsolute(b.destination ?? '')) throw new Error('Scegli una destinazione assoluta per il backup.')
     b.destination = path.resolve(b.destination)
-    if (inside(b.destination, m.localPath)) throw new Error('Il backup non puo stare dentro la cartella montata.')
+    if (inside(b.destination, m.localPath) || inside(m.localPath, b.destination)) throw new Error('Il backup deve stare in una cartella separata: non puo contenere la cartella collegata o trovarsi al suo interno.')
   }
   for (const other of all) {
     if (other.id === m.id) continue
     if (inside(m.localPath, other.localPath) || inside(other.localPath, m.localPath)) {
       throw new Error('Due cartelle montate non possono contenersi a vicenda.')
     }
-    if (other.backup.enabled && inside(other.backup.destination, m.localPath)) {
+    if (other.backup.enabled && (inside(other.backup.destination, m.localPath) || inside(m.localPath, other.backup.destination))) {
       throw new Error('Una destinazione backup finirebbe nella nuova cartella montata.')
     }
     if (b.enabled) {
-      if (inside(b.destination, other.localPath)) throw new Error('Il backup non puo stare dentro una cartella montata.')
-      if (path.resolve(b.destination) === path.resolve(other.backup.destination || '/__none__') && other.backup.enabled) {
+      if (inside(b.destination, other.localPath) || inside(other.localPath, b.destination)) throw new Error('Il backup non puo stare dentro una cartella montata.')
+      if (other.backup.enabled && (inside(b.destination, other.backup.destination) || inside(other.backup.destination, b.destination))) {
         throw new Error('Questa destinazione backup e gia usata da un altra cartella.')
       }
     }
@@ -71,11 +81,16 @@ export class ConfigStore {
       this.flush()
     } else {
       const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'))
-      if (!parsed || typeof parsed !== 'object' || (parsed as StoredConfig).schemaVersion !== 1 || !Array.isArray((parsed as StoredConfig).mounts)) {
+      if (!parsed || typeof parsed !== 'object' || (parsed as StoredConfig).schemaVersion !== 1 || !Array.isArray((parsed as StoredConfig).mounts) || !(parsed as StoredConfig).settings || typeof (parsed as StoredConfig).settings !== 'object') {
         throw new Error('config.json non riconosciuto: fai una copia di sicurezza prima di intervenire.')
       }
       this.data = parsed as StoredConfig
+      if (!('theme' in this.data.settings)) {
+        const copy = this.file + '.before-0.2.bak'
+        if (!existsSync(copy)) copyFileSync(this.file, copy)
+      }
       this.data.settings = { ...defaults().settings, ...this.data.settings }
+      if (!['system', 'light', 'dark'].includes(this.data.settings.theme)) this.data.settings.theme = 'system'
       this.data.mounts = this.data.mounts.map(m => ({
         ...m, autoConnect: Boolean(m.autoConnect),
         backup: {
@@ -123,7 +138,9 @@ export class ConfigStore {
       rcloneExecutable: settings.rcloneExecutable.trim(),
       cacheMaxSize: settings.cacheMaxSize.trim().toUpperCase(),
       startAtLogin: Boolean(settings.startAtLogin),
-      closeToTray: Boolean(settings.closeToTray)
+      closeToTray: Boolean(settings.closeToTray),
+      theme: ['system', 'light', 'dark'].includes(settings.theme) ? settings.theme : 'system',
+      defaultRemote: typeof settings.defaultRemote === 'string' ? settings.defaultRemote.trim() : ''
     }
     this.flush()
   }

@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, lstatSync, rmSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
-import { ConfigStore } from './store'
-import { remoteSpec, runRclone } from './diagnostics'
+import { ConfigStore, validateMount } from './store'
+import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, stopChild } from './diagnostics'
 import type { BackupStatus, MountConfig } from '../shared/types'
 
-interface Job { state: BackupStatus; detail: string; process?: ChildProcess }
+interface Job { state: BackupStatus; detail: string; process?: ChildProcess; abort?: AbortController }
 
 function inside(child: string, parent: string): boolean {
   const c = path.resolve(child)
@@ -59,6 +59,8 @@ function cleanupArchive(root: string, retentionDays: number): void {
 export class BackupManager {
   private jobs = new Map<string, Job>()
   private timer: NodeJS.Timeout | undefined
+  private startupTimer: NodeJS.Timeout | undefined
+  private stopped = false
   constructor(private store: ConfigStore, private changed: () => void, private log: (line: string) => void) {}
 
   state(id: string): { status: BackupStatus; detail: string } {
@@ -67,12 +69,14 @@ export class BackupManager {
   }
 
   startScheduler(): void {
-    if (this.timer) return
+    if (this.timer && !this.stopped) return
+    this.stopped = false
     this.timer = setInterval(() => void this.checkSchedule(), 60000)
-    setTimeout(() => void this.checkSchedule(), 12000)
+    this.startupTimer = setTimeout(() => void this.checkSchedule(), 12000)
   }
 
   private async checkSchedule(): Promise<void> {
+    if (this.stopped) return
     if ([...this.jobs.values()].some(j => j.state === 'running')) return
     for (const m of this.store.mounts) {
       if (!m.backup.enabled || m.backup.intervalMinutes <= 0) continue
@@ -88,7 +92,7 @@ export class BackupManager {
   }
 
   async run(id: string): Promise<void> {
-    const m = this.store.find(id)
+    const m = validateMount(this.store.find(id), this.store.mounts)
     if (!m.backup.enabled) throw new Error('Attiva prima il backup nelle impostazioni della cartella.')
     if ([...this.jobs.values()].some(j => j.state === 'running')) throw new Error('Un backup e gia in corso. Riprova dopo.')
     verifyDestination(m, this.store.mounts)
@@ -100,15 +104,16 @@ export class BackupManager {
     // ISO timestamp above: YYYYMMDD_HHMMSS, format the archive name consistently.
     const stamp = `${timestamp.slice(0, 4)}-${timestamp.slice(4, 6)}-${timestamp.slice(6, 8)}_${timestamp.slice(9)}`
     const archive = path.join(archiveBase, stamp)
-    const job: Job = { state: 'running', detail: 'Verifica della sorgente...' }
+    const job: Job = { state: 'running', detail: 'Verifica della sorgente...', abort: new AbortController() }
     this.jobs.set(id, job)
     this.changed()
     try {
-      const firstLevel = await runRclone(this.store.settings.rcloneExecutable, ['lsf', source, '--max-depth', '1'], 45000)
+      const firstLevel = await runRclone(this.store.settings.rcloneExecutable, ['lsf', source, '--max-depth', '1', ...READ_FLAGS], 45000, job.abort?.signal)
       // Never mirror an unexpectedly empty source over an existing local backup.
       if (!firstLevel.trim() && existsSync(current) && readdirSync(current).length > 0) {
         throw new Error('La sorgente remota risulta vuota. Backup bloccato per proteggere i file locali.')
       }
+      if (job.abort?.signal.aborted) throw new Error('Backup interrotto.')
       ensureManagedDestination(root, m.id)
       mkdirSync(current, { recursive: true })
       mkdirSync(archiveBase, { recursive: true })
@@ -118,10 +123,10 @@ export class BackupManager {
         '--delete-after',
         '--log-level', 'NOTICE',
         '--stats', '10s',
-        '--stats-one-line'
+        '--stats-one-line', ...SFTP_FLAGS
       ]
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(this.store.settings.rcloneExecutable, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
         job.process = proc
         job.detail = 'Copia e archiviazione in corso...'
         this.changed()
@@ -161,7 +166,10 @@ export class BackupManager {
   }
 
   stop(): void {
+    this.stopped = true
     if (this.timer) clearInterval(this.timer)
-    for (const job of this.jobs.values()) if (job.process) job.process.kill('SIGTERM')
+    if (this.startupTimer) clearTimeout(this.startupTimer)
+    this.timer = undefined
+    for (const job of this.jobs.values()) { job.abort?.abort(); if (job.process) stopChild(job.process) }
   }
 }

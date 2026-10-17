@@ -1,8 +1,14 @@
-# Drive Tambu 2.0 - prima base di sviluppo
+# Drive Tambu 2.0 - aggiornamento 0.2.0
 
 Drive Tambu e un'app desktop multipiattaforma (Windows + Linux) per rendere accessibili sul computer cartelle che restano sul server Ubuntu, usando rclone. Interfaccia in React + TypeScript, processo desktop in Electron, backup in una cartella locale separata.
 
-> Stato: **anteprima tecnica / MVP 0.1.0**. Questo archivio contiene il codice sorgente, non un installer gia compilato. Le build native e i montaggi devono ancora essere provati su un vero PC Windows e su Linux. Non sostituisce la precedente app PowerShell: installala e provala separatamente.
+> Stato: **anteprima da collaudare / 0.2.0**. Questo archivio contiene il codice sorgente, non un installer gia compilato. Le build native e i montaggi devono ancora essere provati su un vero PC Windows e su Linux. Non sostituisce la precedente app PowerShell: installala e provala separatamente.
+
+## Aggiornamento 0.2.0
+
+Pannello compatto ed espandibile, temi Sistema/Chiaro/Scuro, selezione delle directory sul server, connessioni esistenti riconosciute automaticamente, correzione dei percorsi incollati e controlli di sicurezza aggiuntivi. Le impostazioni tecniche sono nelle opzioni avanzate, non nella creazione delle cartelle.
+
+Leggi [come applicare l'aggiornamento](AGGIORNAMENTO-0.2.md) e [le verifiche e i limiti](docs/UPDATE-0.2.md). I test automatici non sostituiscono il collaudo di un installer e della connessione SSH reale.
 
 ## Requisiti
 
@@ -26,13 +32,18 @@ npm run dev
 Se vuoi verificare il codice prima del pacchetto:
 
 ```bash
+npm test
 npm run typecheck
 npm run build
 ```
 
-> Non e stato possibile eseguire `npm install` nell'ambiente di generazione di questo progetto. Il codice e stato verificato staticamente ma le dipendenze Electron, le build e i montaggi reali richiedono il test nel tuo ambiente / in GitHub Actions.
+> Le dipendenze non sono scaricabili nell'ambiente che ha preparato questo aggiornamento. Sono passati 37 test Node sui percorsi, i controlli, la configurazione e i contratti dell'interfaccia. Typecheck completo, build Electron, installer e montaggi reali devono essere verificati in GitHub Actions e sul computer di destinazione. Vedi `docs/UPDATE-0.2.md`.
 
-## Usare il server con Cloudflare Tunnel
+## Riferimento avanzato: prima configurazione su un computer nuovo
+
+**Con una connessione gia salvata (per esempio `casa`) non eseguire nuovamente questi passaggi.** L'app la riconosce e la usa automaticamente. Questa sezione e soltanto documentazione per installazioni nuove: la versione 0.2.0 non include ancora un assistente di creazione delle chiavi o di installazione di tutti i componenti.
+
+### Usare il server con Cloudflare Tunnel
 
 La configurazione SSH sul computer deve funzionare **senza chiedere password e senza finestre di login interattive**:
 
@@ -68,9 +79,9 @@ La stringa `ssh` di rclone non chiede password: occorre una chiave SSH funzionan
 ## Aggiungere una cartella
 
 1. Apri Drive Tambu e premi **Nuova cartella**.
-2. Dai un nome, seleziona il remote rclone (es. `server`) e indica il percorso remoto Unix effettivo.
+2. Dai un nome. Se esiste un solo server salvato viene scelto automaticamente; con piu server puoi scegliere quale usare. Premi **Sfoglia** accanto a **Cartella sul server** e seleziona la directory. Puoi anche incollare un percorso completo, per esempio `casa:/home/server/services/filebrowser/data/fabio`.
 3. Seleziona la **cartella superiore** sul PC: Drive Tambu propone un percorso finale con il nome della cartella.
-4. Salva, premi **Collega** e verifica che diventi **Collegata**. Premi **Apri** per visualizzare i file.
+4. Salva: l'app verifica prima l'accesso al server. Con **Collega automaticamente** attivo, il collegamento della nuova cartella parte da solo; altrimenti premi **Collega**. Quando diventa **Collegata**, premi **Apri**.
 
 ### Differenze tra Windows e Linux
 
@@ -114,9 +125,9 @@ npm run dist:linux
 
 I pacchetti vengono creati in `release/`. Le build native sono separate per Windows e Linux.
 
-Con GitHub Actions: crea un repository, carica i file, apri la sezione **Actions** e avvia **Build Drive Tambu**. Le build vengono caricate come artifact scaricabili. Quando crei un tag `v0.1.0`, dopo build riuscite, vengono allegate a una GitHub Release. Non caricare chiavi SSH o file `rclone.conf` sul repository.
+Con GitHub Actions: crea un repository, carica i file, apri la sezione **Actions** e avvia **Build Drive Tambu**. Le build vengono caricate come artifact scaricabili. Quando crei un tag `v0.2.0`, dopo build riuscite, vengono allegate a una GitHub Release. Non caricare chiavi SSH o file `rclone.conf` sul repository.
 
-## Cosa funziona nella prima base
+## Funzioni implementate, da collaudare nell'app installata
 
 - Interfaccia italiana rinnovata, con libreria cartelle, riepilogo, attivita e impostazioni.
 - Salvataggio configurazione JSON locale e modifiche ai collegamenti.

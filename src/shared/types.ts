@@ -1,4 +1,6 @@
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error'
+export type Theme = 'system' | 'light' | 'dark'
+export type WindowMode = 'compact' | 'expanded'
 export type BackupStatus = 'idle' | 'running' | 'error'
 
 export interface BackupConfig {
@@ -25,6 +27,8 @@ export interface AppSettings {
   cacheMaxSize: string
   startAtLogin: boolean
   closeToTray: boolean
+  theme: Theme
+  defaultRemote: string
 }
 
 export interface StoredConfig {
@@ -43,6 +47,8 @@ export interface MountView extends MountConfig {
 export interface Snapshot {
   appVersion: string
   platform: string
+  windowMode: WindowMode
+  dark: boolean
   settings: AppSettings
   mounts: MountView[]
   log: string[]
@@ -52,12 +58,28 @@ export interface Dependencies {
   rclone: { ok: boolean; detail: string }
   remotes: string[]
   note: string
+  connectionError?: string
+}
+
+export interface RemoteListing {
+  remote: string
+  path: string
+  parent: string | null
+  entries: { name: string; path: string }[]
 }
 
 export interface DriveAPI {
   snapshot(): Promise<Snapshot>
   diagnostics(): Promise<Dependencies>
-  chooseDirectory(): Promise<string | null>
+  chooseDirectory(name?: string): Promise<string | null>
+  chooseExecutable(): Promise<string | null>
+  browseRemote(remote: string, path: string, requestId: string): Promise<RemoteListing>
+  cancelBrowse(requestId: string): Promise<void>
+  checkConnection(remote: string, path?: string): Promise<string>
+  setWindowMode(mode: WindowMode): Promise<void>
+  hideWindow(): Promise<void>
+  minimizeWindow(): Promise<void>
+  quit(): Promise<void>
   saveMount(mount: MountConfig): Promise<void>
   deleteMount(id: string): Promise<void>
   connect(id: string): Promise<void>

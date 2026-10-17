@@ -1,0 +1,30 @@
+{
+  "base_commit": "483fc25987e25b8490ac8406b427062575fbfdbb",
+  "version": "0.2.0",
+  "files": {
+    ".github/workflows/build.yml": "b10445c7c5b1233716ee218752d3cd1a3199c868e33109a92423d9749b0e8245",
+    "AGGIORNAMENTO-0.2.md": "692f9118c7b2539acc1d840f24adce095e3fe902db7abb31652a5486e3b2e119",
+    "README.md": "76b10c8835625dff8b8ef9a08257246ebf78215deea0d513f4e9fd36183bb64d",
+    "docs/UPDATE-0.2.md": "3e1e4f07b482172d56e54d5173df8f65fc1747f285860faa694eae2cd58f93b8",
+    "package.json": "dde61da27e836a2b923af81c5eb01dd224c6e002b4e1c3874f0c92c771452879",
+    "src/main/backups.ts": "256f883ea5406b04bcc1678450181038db42251f6b92d5a38ab29d96bcbb4ef2",
+    "src/main/diagnostics.ts": "e31bbaab92eadb000f2e0abfcbabe66caf2335c59b73d01c469145b53a5b0ee5",
+    "src/main/index.ts": "d67394eeae5ad0c700dc0f8a5f227459ce99a055b7952bdba4e1624b8f3717dd",
+    "src/main/mounts.ts": "7d0ff0aa29df043fdca37bcc89050e7bddd6a6c95dae79558cf8aca2fcaa7083",
+    "src/main/store.ts": "106c1db639c27078a2d65f7b0be721542b3bc80adeca272001f1f963c79285fa",
+    "src/main/window-layout.ts": "cc8288af82e0f30b79408c0554560ac58735dbbc9985e54eb6e4bacfd00ad81e",
+    "src/preload/index.ts": "6b8d3266e5011c2af1a5d5e2ce33e24bc6e3dfdfb50767ff92cf8096f29ed103",
+    "src/renderer/src/App.tsx": "8526087389218a78e33a9e876d0b9f991eff9ce70bd9582ba8f086f7eba8d637",
+    "src/renderer/src/styles.css": "c2887d39ac2a72d84fa32cf7bb2107e06c277cac232af516f4579f17ea6cfa06",
+    "src/shared/paths.ts": "8a6b1ff8a2eb3203691124689044c7c9e8358614fc7bbeaa1b3b80b0a438e6fb",
+    "src/shared/types.ts": "8ed70f91412701749338b13e0c4b35f1288005b327e2506f95c875e63ce21224",
+    "tests/browser.test.cjs": "dd381e0f42e00f90068ef65b3a8ad8b8e44209bd92790400777335af8e6aa27b",
+    "tests/layout.test.cjs": "0f823754eb8649abfc88bbf9b5698abedf8566bd7cd49acc8cf806e15dafa942",
+    "tests/mounts.test.cjs": "0881cd8567222fbcc051d8b7f3f8e4516e260306002b0d1d0349bf941e5b60ea",
+    "tests/register.cjs": "590e71d8314ad790f261d7eedfc950db53952e4f5dad7ec511c2257b4e79ceb0",
+    "tests/remote.test.cjs": "1bbec11dc97ae58fd86971f177812b296e14ef99c58680c006d991c09cbfea9a",
+    "tests/store.test.cjs": "1c8c7c6c2c06e3ef34c91a912d2760e59c62114619396039b64207cb8eb2327e",
+    "tests/ui.test.cjs": "01935d635175b14532f6e2975c76b84b9535cfc241329864a3501f58d51df193",
+    "tests/window.test.cjs": "37e2966929f6631dfc68142e86230f3860f3328cc9cabe7a2c2684c717dee1e1"
+  }
+}
