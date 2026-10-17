@@ -208,7 +208,7 @@ function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: 
       {connected && <Button onClick={onOpen}><FolderOpen size={15}/> Apri</Button>}
       <Button kind={connected || connecting ? 'secondary' : 'primary'} disabled={stopping || (busy && !connecting)} onClick={onToggle}>{connecting ? <X size={15}/> : connected ? <Unplug size={15}/> : <ArrowUpRight size={15}/>} {connecting ? 'Annulla' : stopping ? 'Attendi...' : connected ? 'Scollega' : m.status === 'error' ? 'Riprova' : 'Collega'}</Button>
     </div></div>
-    {m.backup.enabled && <div className="backup-actions"><Button kind="ghost" disabled={busy || m.backupStatus === 'running'} onClick={onBackup}><DatabaseBackup size={14}/> Esegui copia</Button><Button kind="ghost" onClick={onOpenBackup}><FolderOpen size={14}/> Apri backup</Button></div>}
+    {m.backup.enabled && <div className="backup-actions"><Button kind="ghost" disabled={busy || m.backupStatus === 'running'} onClick={onBackup}><DatabaseBackup size={14}/> Esegui backup</Button><Button kind="ghost" onClick={onOpenBackup}><FolderOpen size={14}/> Apri backup</Button></div>}
   </article>
 }
 
