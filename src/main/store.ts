@@ -78,7 +78,12 @@ export class ConfigStore {
       this.data.settings = { ...defaults().settings, ...this.data.settings }
       this.data.mounts = this.data.mounts.map(m => ({
         ...m, autoConnect: Boolean(m.autoConnect),
-        backup: { enabled: false, intervalMinutes: 0, destination: '', retentionDays: 30, ...m.backup }
+        backup: {
+          enabled: m.backup?.enabled ?? false,
+          intervalMinutes: m.backup?.intervalMinutes ?? 0,
+          destination: m.backup?.destination ?? '',
+          retentionDays: m.backup?.retentionDays ?? 30
+        }
       }))
     }
   }
