@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import type { AppSettings, Dependencies, MountConfig, MountView, RemoteListing, Snapshot, Theme } from '../../shared/types'
 import { normalizeRemotePath, selectedRemote } from '../../shared/paths'
+import { displayRemotePath, parseDisplayedRemotePath } from './remote-path-display'
 
 type Page = 'folders' | 'activity' | 'settings'
 type Notice = { text: string; type: 'success' | 'error' } | null
@@ -70,7 +71,7 @@ function Dialog({title, subtitle, children, onClose, busy = false}: {title: stri
 
 function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string; initialPath: string; onChoose: (path: string) => void; onClose: () => void}): ReactNode {
   const [listing, setListing] = useState<RemoteListing | null>(null)
-  const [input, setInput] = useState(initialPath)
+  const [input, setInput] = useState(() => displayRemotePath(initialPath))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
@@ -79,14 +80,18 @@ function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string
   const load = useCallback(async (next: string): Promise<void> => {
     if (request.current) void window.drive.cancelBrowse(request.current).catch(() => {})
     const id = crypto.randomUUID(); request.current = id
-    setInput(next); setLoading(true); setError(''); setListing(null); setLimit(200); setFilter('')
+    setInput(displayRemotePath(next)); setLoading(true); setError(''); setListing(null); setLimit(200); setFilter('')
     try {
       const result = await window.drive.browseRemote(remote, next, id)
       if (request.current !== id) return
-      setListing(result); setInput(result.path)
+      setListing(result); setInput(displayRemotePath(result.path))
     } catch (failure) { if (request.current === id) setError(messageOf(failure)) }
     finally { if (request.current === id) setLoading(false) }
   }, [remote])
+  const loadInput = async (): Promise<void> => {
+    try { await load(parseDisplayedRemotePath(remote, input)) }
+    catch (failure) { setError(messageOf(failure)); setListing(null) }
+  }
   useEffect(() => {
     void load(initialPath)
     return () => {
@@ -99,15 +104,15 @@ function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string
     <div className="modal-body remote-body">
       <div className="browser-toolbar">
         <Button title="Cartella personale sul server" onClick={() => load('')}><Home size={16}/> Home</Button>
-        <Button title="Cartella principale del server" onClick={() => load('/')}><Server size={16}/> Server</Button>
+        <Button title="Cartella principale del server" onClick={() => load('/')}><Server size={16}/> Root</Button>
         <Button title="Cartella superiore" disabled={!listing || listing.parent === null || loading} onClick={() => load(listing?.parent ?? '')}><ArrowLeft size={16}/> Su</Button>
       </div>
-      <form className="input-with-button" onSubmit={event => { event.preventDefault(); void load(input) }}>
-        <input aria-label="Percorso da esplorare" spellCheck={false} value={input} placeholder="Home del server" onChange={event => setInput(event.target.value)}/>
+      <form className="input-with-button" onSubmit={event => { event.preventDefault(); void loadInput() }}>
+        <input aria-label="Percorso da esplorare" spellCheck={false} value={input} placeholder="~/" onChange={event => setInput(event.target.value)}/>
         <button type="submit" disabled={loading}>Vai</button>
       </form>
       <ErrorBox message={error}/>
-      {error && <Button onClick={() => load(input)}><RefreshCw size={15}/> Riprova</Button>}
+      {error && <Button onClick={loadInput}><RefreshCw size={15}/> Riprova</Button>}
       {loading && <div className="browser-loading" role="status"><LoaderCircle className="spin" size={23}/><p>Apro le cartelle del server...</p><span>Puoi annullare senza modificare alcun file.</span></div>}
       {listing && <>
         <div className="search-field"><Search size={16}/><input aria-label="Filtra cartelle del server" value={filter} onChange={event => {setFilter(event.target.value); setLimit(200)}} placeholder="Cerca in questa cartella"/></div>
@@ -296,7 +301,7 @@ export default function App(): ReactNode {
     <aside className="sidebar"><Brand/><div className="sidebar-label">IL TUO SPAZIO</div><nav aria-label="Navigazione principale"><button className={`nav-item ${page === 'folders' ? 'selected' : ''}`} onClick={() => setPage('folders')}><LayoutGrid size={18}/><span>Le mie cartelle</span><b>{snapshot.mounts.length}</b></button><button className={`nav-item ${page === 'activity' ? 'selected' : ''}`} onClick={() => setPage('activity')}><Activity size={18}/><span>Attivit&agrave;</span></button></nav><div className="sidebar-bottom"><button className={`settings-link ${page === 'settings' ? 'selected' : ''}`} onClick={() => setPage('settings')}><Settings2 size={19}/><span><strong>Impostazioni</strong><small>Aspetto e connessione</small></span><ChevronRight size={16}/></button><span className="app-version">Drive Tambu {snapshot.appVersion}</span></div></aside>
     <div className="main-view"><header className="titlebar"><div className="titlebar-brand"><Brand/></div><span className="titlebar-title">{title}</span><div className="window-controls"><Button title={snapshot.dark ? 'Passa al tema chiaro' : 'Passa al tema scuro'} kind="ghost" disabled={busy.has('settings')} onClick={() => task('settings', () => window.drive.saveSettings({...snapshot.settings, theme: snapshot.dark ? 'light' : 'dark'}))}>{snapshot.dark ? <Sun size={17}/> : <Moon size={17}/>}</Button>{!compact && <Button title="Riduci a icona" kind="ghost" onClick={() => window.drive.minimizeWindow()}><Minus size={17}/></Button>}<Button title={compact ? 'Apri finestra completa' : 'Torna al pannello compatto'} kind="ghost" onClick={changeMode}>{compact ? <Maximize2 size={17}/> : <Minimize2 size={17}/>}</Button><Button title="Chiudi finestra" kind="ghost" onClick={() => window.drive.hideWindow()}><X size={18}/></Button></div></header>
       <main className="view-scroll">
-        {page === 'folders' && <div className="page-block"><div className="page-heading hero"><div><span className="eyebrow">SEMPLICE. PERSONALE.</span><h1>Le tue cartelle<span>.</span></h1><p>Il tuo server, a portata di mano.</p></div><Button kind="primary" disabled={loadingDeps} onClick={addFolder}><Plus size={17}/><span>Nuova cartella</span></Button></div>
+        {page === 'folders' && <div className="page-block"><div className="page-heading hero"><div><span className="eyebrow">SEMPLICE. VELOCE.</span><h1>Il tuo server, a portata di mano<span>.</span></h1></div><Button kind="primary" disabled={loadingDeps} onClick={addFolder}><Plus size={17}/><span>Nuova cartella</span></Button></div>
           <div className="overview"><div><Folder size={18}/><strong>{snapshot.mounts.length}</strong><span>Cartelle</span></div><div><CircleCheck size={18}/><strong>{connected}</strong><span>Collegate</span></div><div><DatabaseBackup size={18}/><strong>{snapshot.mounts.filter(m => m.backup.enabled).length}</strong><span>Backup attivi</span></div></div>
           <div className="library-toolbar"><p>{snapshot.mounts.length ? `${connected} di ${snapshot.mounts.length} collegate` : 'Un posto per tutto quello che conta.'}</p>{snapshot.mounts.length > 0 && <div className="search-field"><Search size={16}/><input aria-label="Cerca cartelle" placeholder="Cerca" value={search} onChange={event => setSearch(event.target.value)}/></div>}</div>
           {snapshot.mounts.length === 0 ? <div className="empty-state"><span className="empty-folder"><FolderOpen size={46}/></span><h2>Il tuo spazio inizia qui.</h2><p>Scegli una cartella sul server e ritrovala sul computer, senza scaricare tutto l'archivio.</p><Button kind="primary" disabled={loadingDeps} onClick={addFolder}>{loadingDeps ? <LoaderCircle size={17} className="spin"/> : <Plus size={17}/>} {loadingDeps ? 'Rilevo il server...' : 'Aggiungi la prima cartella'}</Button></div> : <div className="mount-list">{visible.map(m => <MountCard key={m.id} m={m} busy={busy.has(m.id)} onEdit={() => setEditing(m)} onOpen={() => void task('open', () => window.drive.openMount(m.id))} onToggle={() => void task(m.id, () => m.status === 'connected' || m.status === 'connecting' ? window.drive.disconnect(m.id) : window.drive.connect(m.id))} onBackup={() => void task(m.id, () => window.drive.backupNow(m.id), 'Backup completato.')} onOpenBackup={() => void task('open-backup', () => window.drive.openBackup(m.id))}/>)}{visible.length === 0 && <div className="empty-list">Nessuna cartella corrisponde alla ricerca.</div>}</div>}
