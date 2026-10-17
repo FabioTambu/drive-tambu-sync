@@ -42,6 +42,7 @@
     "linux": {
       "target": ["deb", "AppImage"],
       "category": "Utility",
+      "maintainer": "Drive Tambu <fabio.tamburini.07@gmail.com>",
       "icon": "resources/icons",
       "synopsis": "Drive Tambu - gestore cartelle remote",
       "artifactName": "DriveTambu-${version}-Linux-${arch}.${ext}"
