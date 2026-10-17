@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ConnectionStatus, MountConfig } from '../shared/types'
 import { ConfigStore, validateMount } from './store'
+import { effectiveRefreshSeconds } from '../shared/refresh'
 import { checkRemoteDirectory, connectionError, errorDetails, remoteSpec, resolveRcloneExecutable, SFTP_FLAGS, stopChild, ConnectionError } from './diagnostics'
 
 type RuntimeMount = {
@@ -11,6 +12,7 @@ type RuntimeMount = {
   child?: ChildProcess
   interval?: NodeJS.Timeout
   stopping?: boolean
+  refreshSeconds?: number
   abort?: AbortController
 }
 
@@ -53,6 +55,12 @@ export class MountManager {
     return { status: state?.status ?? 'disconnected', detail: state?.detail ?? 'Non collegata' }
   }
 
+  needsRefreshReconnect(id: string): boolean {
+    const runtime = this.mounts.get(id)
+    return !!runtime && ['connected', 'connecting'].includes(runtime.status) && runtime.refreshSeconds !== undefined
+      && runtime.refreshSeconds !== effectiveRefreshSeconds(this.store.find(id), this.store.settings)
+  }
+
   async connect(id: string): Promise<void> {
     const active = this.mounts.get(id)
     if (active && ['connecting', 'connected', 'disconnecting'].includes(active.status)) return
@@ -67,10 +75,12 @@ export class MountManager {
       prepareMountPath(m.localPath)
       s.detail = 'Server raggiunto. Collegamento della cartella al computer...'
       this.changed()
+      s.refreshSeconds = effectiveRefreshSeconds(m, this.store.settings)
       const args = [
         'mount', remoteSpec(m.remote, m.remotePath), m.localPath,
         '--vfs-cache-mode', 'full', '--vfs-cache-max-size', this.store.settings.cacheMaxSize,
-        '--vfs-cache-max-age', '24h', '--vfs-write-back', '10s', '--dir-cache-time', '2m',
+        '--vfs-cache-max-age', '20m', '--vfs-cache-poll-interval', '1m',
+        '--vfs-write-back', '10s', '--dir-cache-time', `${s.refreshSeconds}s`, '--poll-interval', '0',
         '--contimeout', '15s', '--log-level', 'NOTICE', ...SFTP_FLAGS
       ]
       const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, {

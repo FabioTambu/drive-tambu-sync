@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, copyFileSync, rename
 import path from 'node:path'
 import type { AppSettings, MountConfig, StoredConfig } from '../shared/types'
 import { normalizeRemotePath } from '../shared/paths'
+import { localTimeZone, nextScheduledAt, scheduleOf } from '../shared/schedule'
+import { DEFAULT_REFRESH_SECONDS, validateRefreshSeconds } from '../shared/refresh'
 
 const defaults = (): StoredConfig => ({
   schemaVersion: 1,
@@ -12,7 +14,8 @@ const defaults = (): StoredConfig => ({
     startAtLogin: false,
     closeToTray: true,
     theme: 'system',
-    defaultRemote: ''
+    defaultRemote: '',
+    directoryRefreshSeconds: DEFAULT_REFRESH_SECONDS
   },
   mounts: []
 })
@@ -43,9 +46,11 @@ export function validateMount(value: MountConfig, all: MountConfig[]): MountConf
   m.localPath = path.resolve(m.localPath)
   if (m.localPath === path.parse(m.localPath).root) throw new Error('Non puoi usare la radice del sistema come cartella collegata.')
   m.autoConnect = Boolean(m.autoConnect)
+  m.directoryRefreshSeconds = m.directoryRefreshSeconds == null ? null : validateRefreshSeconds(m.directoryRefreshSeconds)
   const b = m.backup
   if (!b || typeof b !== 'object') throw new Error('Configurazione backup mancante.')
-  if (!Number.isInteger(b.intervalMinutes) || b.intervalMinutes < 0 || b.intervalMinutes > 525600 || (b.intervalMinutes > 0 && b.intervalMinutes < 5)) throw new Error('Intervallo backup non valido.')
+  b.schedule = scheduleOf(b)
+  b.intervalMinutes = b.schedule.mode === 'interval' ? b.schedule.minutes : 0
   if (!Number.isInteger(b.retentionDays) || b.retentionDays < 0 || b.retentionDays > 36500) throw new Error('Giorni di conservazione non validi.')
   if (b.enabled) {
     if (!path.isAbsolute(b.destination ?? '')) throw new Error('Scegli una destinazione assoluta per il backup.')
@@ -70,6 +75,16 @@ export function validateMount(value: MountConfig, all: MountConfig[]): MountConf
   return m
 }
 
+/** Shortcuts are launcher files, never backup contents or files inside a remote mount. */
+export function validateShortcutLocation(destination: string, mounts: MountConfig[]): void {
+  if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('Scegli una destinazione completa per il collegamento.')
+  for (const m of mounts) {
+    if (inside(destination, m.localPath) || (m.backup.destination && inside(destination, m.backup.destination))) {
+      throw new Error('Salva il collegamento fuori dalle cartelle collegate e dalle destinazioni dei backup.')
+    }
+  }
+}
+
 export class ConfigStore {
   private data: StoredConfig
   private readonly file: string
@@ -84,6 +99,11 @@ export class ConfigStore {
       if (!parsed || typeof parsed !== 'object' || (parsed as StoredConfig).schemaVersion !== 1 || !Array.isArray((parsed as StoredConfig).mounts) || !(parsed as StoredConfig).settings || typeof (parsed as StoredConfig).settings !== 'object') {
         throw new Error('config.json non riconosciuto: fai una copia di sicurezza prima di intervenire.')
       }
+      const upgrade = !('directoryRefreshSeconds' in (parsed as StoredConfig).settings)
+      if (upgrade) {
+        const copy = this.file + '.before-0.3.bak'
+        if (!existsSync(copy)) copyFileSync(this.file, copy)
+      }
       this.data = parsed as StoredConfig
       if (!('theme' in this.data.settings)) {
         const copy = this.file + '.before-0.2.bak'
@@ -97,9 +117,23 @@ export class ConfigStore {
           enabled: m.backup?.enabled ?? false,
           intervalMinutes: m.backup?.intervalMinutes ?? 0,
           destination: m.backup?.destination ?? '',
-          retentionDays: m.backup?.retentionDays ?? 30
+          retentionDays: m.backup?.retentionDays ?? 30,
+          schedule: scheduleOf({ intervalMinutes: m.backup?.intervalMinutes ?? 0, schedule: m.backup?.schedule })
         }
       }))
+      this.data.settings.directoryRefreshSeconds = validateRefreshSeconds(this.data.settings.directoryRefreshSeconds)
+      for (const m of this.data.mounts) {
+        m.directoryRefreshSeconds = m.directoryRefreshSeconds == null ? null : validateRefreshSeconds(m.directoryRefreshSeconds)
+        if (m.backup.enabled && scheduleOf(m.backup).mode !== 'manual' && !m.nextBackupAt) {
+          const schedule = scheduleOf(m.backup)
+          const last = Date.parse(m.lastBackupAt ?? '')
+          m.nextBackupAt = schedule.mode === 'interval' && Number.isFinite(last)
+            ? nextScheduledAt(schedule, new Date(last))
+            : schedule.mode === 'interval' ? new Date().toISOString() : nextScheduledAt(schedule, new Date())
+        }
+        m.backupTimeZone ??= localTimeZone()
+      }
+      if (upgrade) this.flush()
     }
   }
   get settings(): AppSettings { return structuredClone(this.data.settings) }
@@ -112,6 +146,14 @@ export class ConfigStore {
   saveMount(value: MountConfig): void {
     const item = validateMount(value, this.data.mounts)
     const index = this.data.mounts.findIndex(m => m.id === item.id)
+    const previous = index >= 0 ? this.data.mounts[index] : undefined
+    const changedSchedule = !previous || previous.backup.enabled !== item.backup.enabled || JSON.stringify(scheduleOf(previous.backup)) !== JSON.stringify(scheduleOf(item.backup))
+    item.nextBackupAt = !item.backup.enabled ? undefined : changedSchedule
+      ? nextScheduledAt(scheduleOf(item.backup), new Date()) : previous?.nextBackupAt
+    item.backupTimeZone = changedSchedule ? localTimeZone() : previous?.backupTimeZone
+    // The renderer may not set scheduling state or forge timestamps.
+    item.lastBackupAt = previous?.lastBackupAt
+    item.lastBackupAttemptAt = previous?.lastBackupAttemptAt
     if (index >= 0) {
       // Preserve timestamps when editing an existing mount.
       item.lastBackupAt = this.data.mounts[index].lastBackupAt
@@ -120,11 +162,35 @@ export class ConfigStore {
     } else this.data.mounts.push(item)
     this.flush()
   }
+  markBackupStarted(id: string): void {
+    const m = this.data.mounts.find(m => m.id === id)
+    if (!m) throw new Error('Cartella non trovata.')
+    m.lastBackupAttemptAt = new Date().toISOString()
+    this.flush()
+  }
+  reconcileScheduleTimeZone(): void {
+    const zone = localTimeZone()
+    let changed = false
+    for (const m of this.data.mounts) {
+      const schedule = scheduleOf(m.backup)
+      if (m.backupTimeZone !== zone && (schedule.mode === 'daily' || schedule.mode === 'weekly')) {
+        m.backupTimeZone = zone
+        m.nextBackupAt = m.backup.enabled ? nextScheduledAt(schedule, new Date()) : undefined
+        changed = true
+      }
+    }
+    if (changed) this.flush()
+  }
   markBackup(id: string, success: boolean): void {
     const index = this.data.mounts.findIndex(m => m.id === id)
     if (index < 0) return
     this.data.mounts[index].lastBackupAttemptAt = new Date().toISOString()
-    if (success) this.data.mounts[index].lastBackupAt = new Date().toISOString()
+    if (success) {
+      const now = new Date(), m = this.data.mounts[index]
+      m.lastBackupAt = now.toISOString()
+      m.nextBackupAt = m.backup.enabled ? nextScheduledAt(scheduleOf(m.backup), now) : undefined
+      m.backupTimeZone = localTimeZone()
+    }
     this.flush()
   }
   deleteMount(id: string): void {
@@ -140,7 +206,8 @@ export class ConfigStore {
       startAtLogin: Boolean(settings.startAtLogin),
       closeToTray: Boolean(settings.closeToTray),
       theme: ['system', 'light', 'dark'].includes(settings.theme) ? settings.theme : 'system',
-      defaultRemote: typeof settings.defaultRemote === 'string' ? settings.defaultRemote.trim() : ''
+      defaultRemote: typeof settings.defaultRemote === 'string' ? settings.defaultRemote.trim() : '',
+      directoryRefreshSeconds: validateRefreshSeconds(settings.directoryRefreshSeconds ?? DEFAULT_REFRESH_SECONDS)
     }
     this.flush()
   }

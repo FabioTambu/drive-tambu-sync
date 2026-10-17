@@ -1,0 +1,158 @@
+{
+  "version": "0.3.0",
+  "base_version": "0.2.1",
+  "base_commit": "286e20ab36e990742c788981cf439460a36f8874",
+  "description": "Changed source files and tests only. This manifest is also included, without a self-hash.",
+  "files": [
+    {
+      "path": "AGGIORNAMENTO-0.3.md",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "4c121af8faa072b2c1a208003423f71314b2a421a2f28d7a41560f4cf1cc6231"
+    },
+    {
+      "path": "docs/VERIFICA-0.3.md",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "033c9ec7e8c2f1399f0743deba42183842c08df93f5afee173874aea08fe2331"
+    },
+    {
+      "path": "package.json",
+      "action": "replace",
+      "before_sha256": "77ffb183c9a81857f2877df757f793b24a906c08d7451d3a05add7f3096932df",
+      "after_sha256": "d47794b7b05bf26227ee6669641f5066eca7d3bc460b9ef0c4c11fd10fdc5f50"
+    },
+    {
+      "path": "src/main/backup-progress.ts",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "0f359e458f9f197a5b90a24d5a29b4a1e573ffe25537e080d13ae06a7ddcb6ea"
+    },
+    {
+      "path": "src/main/backups.ts",
+      "action": "replace",
+      "before_sha256": "256f883ea5406b04bcc1678450181038db42251f6b92d5a38ab29d96bcbb4ef2",
+      "after_sha256": "5ceb9a4b9b0c6a63bbc90d7ff364a0aeffa676e979bb87fbc8625299794fcbd3"
+    },
+    {
+      "path": "src/main/index.ts",
+      "action": "replace",
+      "before_sha256": "d67394eeae5ad0c700dc0f8a5f227459ce99a055b7952bdba4e1624b8f3717dd",
+      "after_sha256": "bc6b1eb037457e552d576bbff8bd1f1f95a1d64030721716e7163b6eccc20a38"
+    },
+    {
+      "path": "src/main/mounts.ts",
+      "action": "replace",
+      "before_sha256": "7d0ff0aa29df043fdca37bcc89050e7bddd6a6c95dae79558cf8aca2fcaa7083",
+      "after_sha256": "df7aebd45d84ae296168211b4fa4636d1b0cc2a4a71bb9926694e4e91bdf77ea"
+    },
+    {
+      "path": "src/main/shortcuts.ts",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "a39c050286d56478f52600724d701457adc5cc2bae84ac1606c64fd5b3da7df6"
+    },
+    {
+      "path": "src/main/store.ts",
+      "action": "replace",
+      "before_sha256": "106c1db639c27078a2d65f7b0be721542b3bc80adeca272001f1f963c79285fa",
+      "after_sha256": "cf7ea12d7c92c157de687c18382f31791a41de2683922e7af2999963fdee4880"
+    },
+    {
+      "path": "src/preload/index.ts",
+      "action": "replace",
+      "before_sha256": "6b8d3266e5011c2af1a5d5e2ce33e24bc6e3dfdfb50767ff92cf8096f29ed103",
+      "after_sha256": "47c33e43474b4864c5e91899e351a71294736721d8ecaedffa1a7eb35d09ebb0"
+    },
+    {
+      "path": "src/renderer/src/App.tsx",
+      "action": "replace",
+      "before_sha256": "ca62247324e3f91b7b88d7a55ba386cfb427f291e82a3752e8c5f4bad95199f9",
+      "after_sha256": "9ca010331355540b5277e38eb0fc5e07e945dc989217b9cab154328e3c19fc97"
+    },
+    {
+      "path": "src/renderer/src/styles.css",
+      "action": "replace",
+      "before_sha256": "c2887d39ac2a72d84fa32cf7bb2107e06c277cac232af516f4579f17ea6cfa06",
+      "after_sha256": "1996fadb0fcf7b219477ab625ae1c8cc14e6e1da3a35afcaddb41d71099f479e"
+    },
+    {
+      "path": "src/shared/refresh.ts",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "2370f9533fe25a099168a0c509ed14ba54349d61494209a0ce4e9ecf4edb4a8d"
+    },
+    {
+      "path": "src/shared/schedule.ts",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "56e6ffe0d4c2864869f7546db49b558c36e922a3e4b3e7577484995e4c179271"
+    },
+    {
+      "path": "src/shared/types.ts",
+      "action": "replace",
+      "before_sha256": "8ed70f91412701749338b13e0c4b35f1288005b327e2506f95c875e63ce21224",
+      "after_sha256": "291fc250a29d26de82e7e0a8243b35cdd87895796ac4cb94e3dcf9f91f371030"
+    },
+    {
+      "path": "tests/backups.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "54e14f684c50da1510bc9d022a80c1b7d50ba083e3b3400d714999e820842f10"
+    },
+    {
+      "path": "tests/helpers/ui.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "370e1a63b9212e45b43a3d3e44da1f6702119467ebc2b116b27ea6db2e103f5c"
+    },
+    {
+      "path": "tests/mounts.test.cjs",
+      "action": "replace",
+      "before_sha256": "0881cd8567222fbcc051d8b7f3f8e4516e260306002b0d1d0349bf941e5b60ea",
+      "after_sha256": "a6768cea9c0bcc57e76644ce5afe97a793339b4f13789ba2c08e9314cb0c4635"
+    },
+    {
+      "path": "tests/preferences.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "b5e2a434b05a64bc3b0c7e9302be790d1ad9a026e60ce18b1899fe0dee294f9a"
+    },
+    {
+      "path": "tests/progress.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "0e6e9491026288f1c312006642e45f3be028b7ac9360329120b53da3407a8086"
+    },
+    {
+      "path": "tests/schedule.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "01b712b9c4ac74394ca73d2ac7aae5ec950ea5aef42457550616c6f652c98974"
+    },
+    {
+      "path": "tests/shortcuts.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "40f65796d0787c111f0aa5957264156dfb84977844b8729d7d455bf033a67d9b"
+    },
+    {
+      "path": "tests/store.test.cjs",
+      "action": "replace",
+      "before_sha256": "1c8c7c6c2c06e3ef34c91a912d2760e59c62114619396039b64207cb8eb2327e",
+      "after_sha256": "583dbcff2e018d2d728fd0875c7161aaa3108213e5b90da486cbcab7d558397e"
+    },
+    {
+      "path": "tests/syntax.test.cjs",
+      "action": "add",
+      "before_sha256": null,
+      "after_sha256": "8de52f0cc985bfd6920bcf7bcedeedc2b30be5be63c023b5b1be8bb876b03142"
+    },
+    {
+      "path": "tests/window.test.cjs",
+      "action": "replace",
+      "before_sha256": "37e2966929f6631dfc68142e86230f3860f3328cc9cabe7a2c2684c717dee1e1",
+      "after_sha256": "12293c44651700301b3ce99f3ae42349ca12043713ed7514ae5e6a5a0c9b286e"
+    }
+  ]
+}

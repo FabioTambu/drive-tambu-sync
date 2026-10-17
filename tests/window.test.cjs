@@ -4,7 +4,9 @@ const { EventEmitter } = require('node:events')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), Module = require('node:module')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'drive-tambu-window-'))
 after(() => fs.rmSync(tmp, { recursive: true, force: true }))
-const handlers = new Map(), windows = []
+const handlers = new Map(), windows = [], opened = []
+const shortcutFile = path.join(tmp, process.platform === 'win32' ? 'Files.lnk' : 'Files.desktop')
+fs.writeFileSync(path.join(tmp, 'config.json'), JSON.stringify({schemaVersion:1,settings:{rcloneExecutable:'rclone',cacheMaxSize:'5G',theme:'system',defaultRemote:'casa',startAtLogin:false,closeToTray:true,directoryRefreshSeconds:120},mounts:[{id:'shortcut-123',name:'Files',remote:'casa',remotePath:'/files',localPath:path.join(tmp,'linked'),autoConnect:false,backup:{enabled:false,intervalMinutes:0,destination:'',retentionDays:30}}]}))
 class Window extends EventEmitter {
   constructor(options) { super(); this.options = options; this.bounds = { x: 0, y: 0, width: options.width, height: options.height }; this.visible = false;
     this.webContents = new EventEmitter(); this.webContents.mainFrame = {}; this.webContents.send = () => {}; this.webContents.setWindowOpenHandler = () => {}; windows.push(this) }
@@ -22,14 +24,14 @@ Object.assign(app, {whenReady: () => Promise.resolve(), requestSingleInstanceLoc
 const screen = new EventEmitter(); Object.assign(screen, {getDisplayNearestPoint: () => ({workArea: {x: 0, y: 0, width: 1920, height: 1040}}), getDisplayMatching: () => ({workArea: {x: 0, y: 0, width: 1920, height: 1040}}), getCursorScreenPoint: () => ({x: 500, y: 500}), getPrimaryDisplay: () => ({workArea: {x: 0, y: 0, width: 1920, height: 1040}})})
 class Tray extends EventEmitter { setToolTip() {} setContextMenu() {} getBounds() { return {x: 1850, y: 1040, width: 20, height: 20} } }
 const electron = { app, BrowserWindow: Window, screen, nativeTheme: theme, Tray,
-  dialog: { showErrorBox: (_title, msg) => { throw new Error(msg) }, showMessageBox: async () => ({response: 0}) },
+  dialog: { showErrorBox: (_title, msg) => { throw new Error(msg) }, showMessageBox: async () => ({response: 0}), showSaveDialog: async () => ({canceled:false,filePath:shortcutFile}) },
   ipcMain: {handle: (name, fn) => handlers.set(name, fn)},
-  nativeImage: {createFromPath: () => ({resize: () => ({})})}, Menu: {buildFromTemplate: v => v, setApplicationMenu: () => {}}, shell: {openPath: async () => ''} }
+  nativeImage: {createFromPath: () => ({resize: () => ({})})}, Menu: {buildFromTemplate: v => v, setApplicationMenu: () => {}}, shell: {openPath: async p => {opened.push(p);return ''},writeShortcutLink:(dest,_operation,options)=>{fs.writeFileSync(dest,JSON.stringify(options));return true}} }
 const original = Module._load
 Module._load = function(id, ...args) {
   if (id === 'electron') return electron
-  if (id === './backups') return {BackupManager: class { startScheduler() {} state() { return {status: 'idle', detail: ''} } stop() {} }}
-  if (id === './mounts') return {MountManager: class { state() { return {status: 'disconnected', detail: ''} } async disconnectAll() {} }}
+  if (id === './backups') return {BackupManager: class { startScheduler() {} state() { return {status: 'running', detail: 'Copia...', progress:{phase:'copying',percent:42,bytes:42,totalBytes:100,speed:1,checks:1,transfers:0}} } stop() {} }}
+  if (id === './mounts') return {MountManager: class { state() { return {status: 'connected', detail: ''} } needsRefreshReconnect(){return true} async connect(){} async disconnectAll() {} }}
   return original.call(this, id, ...args)
 }
 require('../src/main/index.ts')
@@ -63,4 +65,20 @@ test('renderer APIs reject another window and subframes', async () => {
   await ready()
   assert.throws(() => handlers.get('drive:snapshot')({sender: {}}), /autorizzata/)
   assert.throws(() => handlers.get('drive:snapshot')({...event(), senderFrame: {}}), /autorizzata/)
+})
+
+test('snapshot forwards backup statistics and the refresh-reconnect notice',async()=>{
+  await ready();const m=handlers.get('drive:snapshot')(event()).mounts[0]
+  assert.equal(m.backupProgress.percent,42);assert.equal(m.refreshNeedsReconnect,true)
+})
+test('Create shortcut is a guarded IPC operation and writes the chosen launcher',async()=>{
+  await ready();const handler=handlers.get('drive:createShortcut');assert.equal(typeof handler,'function')
+  await assert.rejects(handler({sender:{}} ,'shortcut-123'),/autorizzata/)
+  app.isPackaged=true
+  try {const result=await handler(event(),'shortcut-123');assert.equal(result,shortcutFile);assert.ok(fs.readFileSync(result,'utf8').includes('--open-folder shortcut-123'))}
+  finally {app.isPackaged=false}
+})
+test('second-instance shortcut arguments open the saved folder in the existing app',async()=>{
+  await ready();app.emit('second-instance',{},['drive-tambu','--open-folder','shortcut-123']);await ready()
+  assert.ok(opened.includes(path.join(tmp,'linked')));assert.equal(windows.length,1)
 })

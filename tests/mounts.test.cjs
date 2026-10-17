@@ -67,3 +67,26 @@ test('cancelling while checking the server never starts the mount', async () => 
     assert.equal(manager.state('folder-123').status, 'disconnected')
   } finally { cleanup() }
 })
+
+test('mounts evict unused cache after 20 minutes and check it every minute',async()=>{
+  const manager=setup()
+  try {await manager.connect('folder-123');const args=calls.find(a=>a[0]==='mount')
+    assert.equal(args[args.indexOf('--vfs-cache-max-age')+1],'20m')
+    assert.equal(args[args.indexOf('--vfs-cache-poll-interval')+1],'1m')
+  } finally {cleanup()}
+})
+test('folder refresh override wins, and changing the global setting never restarts a mount',async()=>{
+ calls=[];rejectRemote=false
+ const settings={rcloneExecutable:'fixture',cacheMaxSize:'5G',directoryRefreshSeconds:90}
+ const m={id:'folder-123',name:'Docs',remote:'casa',remotePath:'/files',localPath:path.join(tmp,'refresh-'+Date.now()),directoryRefreshSeconds:17,backup:{enabled:false,destination:'',intervalMinutes:0,retentionDays:30}}
+ const manager=new MountManager({find:()=>m,mounts:[m],get settings(){return settings}},()=>{},()=>{})
+ try{
+  await manager.connect(m.id);const args=calls.find(a=>a[0]==='mount')
+  assert.equal(args[args.indexOf('--dir-cache-time')+1],'17s')
+  settings.directoryRefreshSeconds=600
+  assert.equal(manager.needsRefreshReconnect(m.id),false)
+  m.directoryRefreshSeconds=null
+  assert.equal(manager.needsRefreshReconnect(m.id),true)
+  assert.equal(calls.filter(a=>a[0]==='mount').length,1)
+ }finally{cleanup()}
+})

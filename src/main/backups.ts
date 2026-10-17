@@ -2,10 +2,12 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, lstatSync, rmSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { ConfigStore, validateMount } from './store'
-import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, stopChild } from './diagnostics'
-import type { BackupStatus, MountConfig } from '../shared/types'
+import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, stopChild, errorDetails } from './diagnostics'
+import type { BackupStatus, MountConfig, BackupProgress } from '../shared/types'
+import { isBackupDue } from '../shared/schedule'
+import { JsonLogReader, progressFromStats } from './backup-progress'
 
-interface Job { state: BackupStatus; detail: string; process?: ChildProcess; abort?: AbortController }
+interface Job { state: BackupStatus; detail: string; progress?: BackupProgress; process?: ChildProcess; abort?: AbortController }
 
 function inside(child: string, parent: string): boolean {
   const c = path.resolve(child)
@@ -63,35 +65,34 @@ export class BackupManager {
   private stopped = false
   constructor(private store: ConfigStore, private changed: () => void, private log: (line: string) => void) {}
 
-  state(id: string): { status: BackupStatus; detail: string } {
+  state(id: string): { status: BackupStatus; detail: string; progress?: BackupProgress } {
     const entry = this.jobs.get(id)
-    return { status: entry?.state ?? 'idle', detail: entry?.detail ?? 'In attesa' }
+    return { status: entry?.state ?? 'idle', detail: entry?.detail ?? 'In attesa', progress: entry?.progress ? { ...entry.progress } : undefined }
   }
 
   startScheduler(): void {
     if (this.timer && !this.stopped) return
     this.stopped = false
-    this.timer = setInterval(() => void this.checkSchedule(), 60000)
-    this.startupTimer = setTimeout(() => void this.checkSchedule(), 12000)
+    const tick = (): void => { void this.checkSchedule().catch(error => this.log(`Programmazione backup: ${String(error)}`)) }
+    this.timer = setInterval(tick, 15000)
+    this.startupTimer = setTimeout(tick, 12000)
   }
 
   private async checkSchedule(): Promise<void> {
     if (this.stopped) return
     if ([...this.jobs.values()].some(j => j.state === 'running')) return
-    for (const m of this.store.mounts) {
-      if (!m.backup.enabled || m.backup.intervalMinutes <= 0) continue
-      const previous = Date.parse(m.lastBackupAt ?? '') || 0
-      const attempted = Date.parse(m.lastBackupAttemptAt ?? '') || 0
-      const elapsed = Date.now() - Math.max(previous, attempted)
-      const wait = previous === 0 ? 0 : m.backup.intervalMinutes * 60000
-      if (elapsed >= wait && Date.now() - attempted > 10 * 60000) {
-        try { await this.run(m.id) } catch (error) { this.log(`Backup ${m.name}: ${String(error)}`) }
-        break
-      }
+    this.store.reconcileScheduleTimeZone()
+    const now = new Date()
+    const due = this.store.mounts.filter(m => isBackupDue(m, now))
+      .sort((a, b) => Date.parse(a.nextBackupAt!) - Date.parse(b.nextBackupAt!))
+    const m = due[0]
+    if (m) {
+      try { await this.run(m.id) } catch (error) { this.log(`Backup ${m.name}: ${String(error)}`) }
     }
   }
 
   async run(id: string): Promise<void> {
+    if (this.stopped) throw new Error('Il programma si sta chiudendo. Riaprilo prima di eseguire il backup.')
     const m = validateMount(this.store.find(id), this.store.mounts)
     if (!m.backup.enabled) throw new Error('Attiva prima il backup nelle impostazioni della cartella.')
     if ([...this.jobs.values()].some(j => j.state === 'running')) throw new Error('Un backup e gia in corso. Riprova dopo.')
@@ -104,10 +105,11 @@ export class BackupManager {
     // ISO timestamp above: YYYYMMDD_HHMMSS, format the archive name consistently.
     const stamp = `${timestamp.slice(0, 4)}-${timestamp.slice(4, 6)}-${timestamp.slice(6, 8)}_${timestamp.slice(9)}`
     const archive = path.join(archiveBase, stamp)
-    const job: Job = { state: 'running', detail: 'Verifica della sorgente...', abort: new AbortController() }
+    const job: Job = { state: 'running', detail: 'Controllo dei file...', progress: progressFromStats({}), abort: new AbortController() }
     this.jobs.set(id, job)
     this.changed()
     try {
+      this.store.markBackupStarted(id)
       const firstLevel = await runRclone(this.store.settings.rcloneExecutable, ['lsf', source, '--max-depth', '1', ...READ_FLAGS], 45000, job.abort?.signal)
       // Never mirror an unexpectedly empty source over an existing local backup.
       if (!firstLevel.trim() && existsSync(current) && readdirSync(current).length > 0) {
@@ -122,8 +124,7 @@ export class BackupManager {
         '--backup-dir', archive,
         '--delete-after',
         '--log-level', 'NOTICE',
-        '--stats', '10s',
-        '--stats-one-line', ...SFTP_FLAGS
+        '--stats', '1s', '--stats-log-level', 'NOTICE', '--use-json-log', ...SFTP_FLAGS
       ]
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -131,13 +132,17 @@ export class BackupManager {
         job.detail = 'Copia e archiviazione in corso...'
         this.changed()
         let lastError = ''
-        const onData = (chunk: Buffer): void => {
-          for (const line of chunk.toString('utf8').split(/\r?\n/)) {
-            if (/ERROR|failed|fatal/i.test(line)) lastError = line.slice(0, 350)
+        const receive = (record: Record<string, unknown>): void => {
+          if (record.stats && typeof record.stats === 'object' && !Array.isArray(record.stats)) {
+            job.progress = progressFromStats(record.stats as Record<string, unknown>)
+            job.detail = job.progress.phase === 'checking' ? 'Controllo dei file...' : job.progress.phase === 'finishing' ? 'Finalizzazione del backup...' : 'Copia in corso...'
+            this.changed()
           }
+          if (record.level === 'error' || record.level === 'fatal') lastError = errorDetails(new Error(String(record.msg ?? 'Backup non riuscito')))
         }
-        proc.stdout?.on('data', onData)
-        proc.stderr?.on('data', onData)
+        const stdout = new JsonLogReader(receive), stderr = new JsonLogReader(receive)
+        proc.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+        proc.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
         let settled = false
         const finish = (err?: Error): void => {
           if (settled) return
@@ -146,12 +151,16 @@ export class BackupManager {
           err ? reject(err) : resolve()
         }
         proc.once('error', e => finish(e))
-        proc.once('close', code => finish(code === 0 ? undefined : new Error(lastError || `rclone sync fallito (codice ${code ?? '?'})`)))
+        proc.once('close', code => {
+          stdout.end(); stderr.end()
+          finish(code === 0 && !job.abort?.signal.aborted ? undefined : new Error(lastError || `Backup interrotto o non riuscito (codice ${code ?? '?'}).`))
+        })
       })
       try { cleanupArchive(root, m.backup.retentionDays) }
       catch (error) { this.log(`${m.name}: pulizia archivio non riuscita - ${String(error)}`) }
       this.store.markBackup(id, true)
       job.state = 'idle'
+      job.progress = { ...(job.progress ?? progressFromStats({})), phase: 'complete', percent: 100 }
       job.detail = 'Backup completato'
       this.log(`${m.name}: backup completato`)
     } catch (error) {

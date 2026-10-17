@@ -2,13 +2,15 @@ import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowLeft, ArrowUpRight, Check, ChevronRight, CircleAlert, CircleCheck,
-  Cloud, DatabaseBackup, Folder, FolderOpen, HardDrive, Home, Laptop, LayoutGrid,
+  Cloud, Clock3, Link2, DatabaseBackup, Folder, FolderOpen, HardDrive, Home, Laptop, LayoutGrid,
   LoaderCircle, LogOut, Maximize2, Minimize2, Minus, Monitor, Moon, MoreHorizontal,
   Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, Sun, Trash2, Unplug, X
 } from 'lucide-react'
-import type { AppSettings, Dependencies, MountConfig, MountView, RemoteListing, Snapshot, Theme } from '../../shared/types'
+import type { AppSettings, Dependencies, MountConfig, MountView, RemoteListing, Snapshot, Theme, BackupSchedule, BackupProgress } from '../../shared/types'
 import { normalizeRemotePath, selectedRemote } from '../../shared/paths'
 import { displayRemotePath, parseDisplayedRemotePath } from './remote-path-display'
+import { nextScheduledAt, scheduleOf } from '../../shared/schedule'
+import { DEFAULT_REFRESH_SECONDS } from '../../shared/refresh'
 
 type Page = 'folders' | 'activity' | 'settings'
 type Notice = { text: string; type: 'success' | 'error' } | null
@@ -35,6 +37,51 @@ function Toggle({checked, onChange, label, disabled}: {checked: boolean; onChang
 function Field({label, detail, children}: {label: string; detail?: string; children: ReactNode}): ReactNode {
   return <label className="field"><span className="field-label">{label}</span>{children}{detail && <span className="field-hint">{detail}</span>}</label>
 }
+const backupUnits = [{factor:1,label:'minuti'}, {factor:60,label:'ore'}, {factor:1440,label:'giorni'}, {factor:10080,label:'settimane'}]
+const refreshUnits = [{factor:1,label:'secondi'}, {factor:60,label:'minuti'}, {factor:3600,label:'ore'}]
+function DurationInput({value, onChange, label, unitLabel, units, min, max}: {
+  value: number; onChange: (value: number) => void; label: string; unitLabel: string;
+  units: {factor:number;label:string}[]; min:number; max:number
+}): ReactNode {
+  const [unit,setUnit] = useState(() => [...units].reverse().find(u => value > 0 && value % u.factor === 0)?.factor ?? 1)
+  return <div className="duration-input"><input required aria-label={label} type="number" step="any" min={min / unit} max={max / unit}
+    value={Number.isFinite(value) ? value / unit : ''} onChange={event => onChange(event.target.value === '' ? NaN : Number(event.target.value) * unit)}/>
+    <select aria-label={unitLabel} value={unit} onChange={event => {const next=Number(event.target.value);setUnit(next);onChange((Number.isFinite(value) ? value / unit : 1) * next)}}>
+      {units.map(u => <option key={u.factor} value={u.factor}>{u.label}</option>)}
+    </select></div>
+}
+function ScheduleFields({schedule, onChange, nextRun}: {schedule: BackupSchedule; onChange: (value: BackupSchedule) => void; nextRun?: string}): ReactNode {
+  const days = [{value:1,label:'Lunedi',short:'Lun'}, {value:2,label:'Martedi',short:'Mar'}, {value:3,label:'Mercoledi',short:'Mer'}, {value:4,label:'Giovedi',short:'Gio'}, {value:5,label:'Venerdi',short:'Ven'}, {value:6,label:'Sabato',short:'Sab'}, {value:0,label:'Domenica',short:'Dom'}]
+  let preview = ''
+  try { const next = nextRun ?? nextScheduledAt(schedule, new Date()); if (next) preview = dateLabel(next) } catch { /* The save operation reports invalid input. */ }
+  return <div className="schedule-fields">
+    <Field label="Quando eseguire il backup"><select aria-label="Programmazione backup" value={schedule.mode} onChange={event => {
+      const mode = event.target.value
+      onChange(mode === 'interval' ? {mode,minutes:60} : mode === 'daily' ? {mode,time:'02:00'} : mode === 'weekly' ? {mode,weekdays:[0],time:'02:00'} : {mode:'manual'})
+    }}><option value="manual">Solo manualmente</option><option value="interval">A intervalli regolari</option><option value="daily">Ogni giorno, a un'ora precisa</option><option value="weekly">Nei giorni della settimana scelti</option></select></Field>
+    {schedule.mode === 'interval' && <Field label="Ripeti ogni" detail="Da un minuto a 365 giorni. L'intervallo riparte al termine del backup."><DurationInput label="Intervallo backup" unitLabel="Unita intervallo backup" value={schedule.minutes} onChange={minutes => onChange({mode:'interval',minutes})} units={backupUnits} min={1} max={525600}/></Field>}
+    {schedule.mode === 'weekly' && <div className="field"><span className="field-label">Giorni della settimana</span><div className="weekday-options" role="group" aria-label="Giorni del backup">{days.map(day => <button key={day.value} type="button" aria-label={day.label} aria-pressed={schedule.weekdays.includes(day.value)} className={schedule.weekdays.includes(day.value) ? 'selected' : ''} onClick={() => onChange({...schedule,weekdays:schedule.weekdays.includes(day.value) ? schedule.weekdays.filter(d => d !== day.value) : [...schedule.weekdays,day.value]})}>{day.short}</button>)}</div></div>}
+    {(schedule.mode === 'weekly' || schedule.mode === 'daily') && <Field label="Alle ore" detail="Ora locale di questo computer."><input required aria-label="Ora del backup" type="time" value={schedule.time} onChange={event => onChange({...schedule,time:event.target.value})}/></Field>}
+    {preview && <p className="schedule-preview"><Clock3 size={15}/><span>{nextRun && Date.parse(nextRun) <= Date.now() ? 'Appuntamento da recuperare: ' : 'Prossimo appuntamento: '}<strong>{preview}</strong></span></p>}
+    {schedule.mode !== 'manual' && <p className="field-hint">Il computer deve essere acceso e Drive Tambu aperto. Al successivo avvio viene recuperata una sola esecuzione saltata, senza accumulare copie arretrate.</p>}
+  </div>
+}
+function byteLabel(bytes: number): string {
+  const units = ['B','KB','MB','GB','TB']
+  let n = Math.max(0, bytes), unit = 0
+  while (n >= 1000 && unit < units.length - 1) { n /= 1000; unit++ }
+  return `${n.toLocaleString('it-IT', {maximumFractionDigits:unit === 0 ? 0 : 1})} ${units[unit]}`
+}
+function BackupProgressView({progress}: {progress?: BackupProgress}): ReactNode {
+  const checking = !progress || progress.phase === 'checking'
+  const percent = progress?.percent
+  return <div className="backup-progress" aria-live="polite">
+    {percent != null ? <><div className="progress-track" role="progressbar" aria-label="Avanzamento backup stimato" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{width:`${percent}%`}}/></div>
+      <p>{progress?.phase === 'finishing' ? 'Finalizzazione...' : `${byteLabel(progress?.bytes ?? 0)} di circa ${byteLabel(progress?.totalBytes ?? 0)}${progress?.speed ? ` - ${byteLabel(progress.speed)}/s` : ''}`}</p></>
+      : <p className="progress-checking"><LoaderCircle size={14} className="spin"/>{checking ? 'Controllo dei file...' : 'Backup in corso...'} {progress?.checks ? `${progress.checks} verificati` : ''}</p>}
+  </div>
+}
+
 function ErrorBox({message}: {message: string}): ReactNode {
   return message ? <div className="error-box" role="alert"><CircleAlert size={17}/><span>{message}</span></div> : null
 }
@@ -128,8 +175,8 @@ function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string
   </Dialog>
 }
 
-function MountModal({original, remotes, onClose, onSave, onDelete, onSettings}: {
-  original: MountConfig; remotes: string[]; platform?: string; onClose: () => void;
+function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, defaultRefreshSeconds = DEFAULT_REFRESH_SECONDS}: {
+  original: MountConfig; remotes: string[]; defaultRefreshSeconds?: number; platform?: string; onClose: () => void;
   onSave: (m: MountConfig) => Promise<void>; onDelete: (id: string) => Promise<boolean>; onSettings: () => void;
   notify?: (text: string, type?: 'success' | 'error') => void; apiBusy?: boolean
 }): ReactNode {
@@ -138,7 +185,10 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings}: 
   const [saving, setSaving] = useState(false)
   const [browser, setBrowser] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [shortcutResult, setShortcutResult] = useState('')
   const isNew = !original.name
+  const schedule = m.backup.schedule ?? (m.backup.intervalMinutes === 0 ? {mode:'manual' as const} : {mode:'interval' as const,minutes:m.backup.intervalMinutes})
+  const sameSchedule = !isNew && original.backup.enabled && m.backup.enabled && JSON.stringify(schedule) === JSON.stringify(scheduleOf(original.backup))
   const status = (original as Partial<MountView>).status
   const pathLocked = status === 'connected' || status === 'connecting' || status === 'disconnecting'
   const patch = <K extends keyof MountConfig>(key: K, value: MountConfig[K]): void => {setM(prev => ({...prev, [key]: value})); setError('')}
@@ -180,9 +230,17 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings}: 
             <div className="input-with-button"><input required aria-label="Cartella sul computer" disabled={saving || pathLocked} value={m.localPath} placeholder="Scegli una posizione" onChange={event => patch('localPath', event.target.value)}/><button type="button" aria-label="Sfoglia cartelle sul computer" disabled={saving || pathLocked} onClick={() => void chooseLocal()}><Folder size={16}/> Sfoglia</button></div>
           </Field>
           <div className="setting-switch"><div><strong>Collega automaticamente</strong><p>La cartella torna disponibile quando apri Drive Tambu.</p></div><Toggle label="Collega automaticamente" checked={m.autoConnect} disabled={saving} onChange={value => patch('autoConnect', value)}/></div>
+          <div className="refresh-preferences"><h3>Aggiornamento elenco file</h3>
+            <div className="setting-switch"><div><strong>Usa l'intervallo generale</strong><p>{defaultRefreshSeconds} secondi, dalle Impostazioni.</p></div><Toggle label="Usa l'intervallo generale" checked={m.directoryRefreshSeconds == null} disabled={saving} onChange={value => patch('directoryRefreshSeconds',value ? null : defaultRefreshSeconds)}/></div>
+            {m.directoryRefreshSeconds != null && <Field label="Intervallo personalizzato" detail="Da 5 secondi a 24 ore. Per un collegamento attivo, il valore cambia alla prossima riconnessione."><DurationInput label="Intervallo aggiornamento cartella" unitLabel="Unita aggiornamento cartella" value={m.directoryRefreshSeconds} onChange={v => patch('directoryRefreshSeconds',v)} units={refreshUnits} min={5} max={86400}/></Field>}
+          </div>
+          {!isNew && <div className="shortcut-preferences"><Button disabled={saving} onClick={async () => {
+            setSaving(true);setError('');setShortcutResult('')
+            try {const result = await window.drive.createShortcut(m.id);if (result) setShortcutResult(`Collegamento creato: ${result}`)} catch (failure) {setError(messageOf(failure))} finally {setSaving(false)}
+          }}><Link2 size={16}/> Crea collegamento...</Button><p className="field-hint">Scegli dove salvarlo. Apre la cartella salvata nell'app e avvia il collegamento quando serve.</p>{shortcutResult && <p className="success-box" role="status">{shortcutResult}</p>}</div>}
           <div className="setting-switch"><div><strong>Backup su questo computer</strong><p>Una copia separata, con le versioni precedenti. Occupa spazio sul disco.</p></div><Toggle label="Backup su questo computer" checked={m.backup.enabled} disabled={saving} onChange={value => backup('enabled', value)}/></div>
           {m.backup.enabled && <fieldset disabled={saving} className="backup-form"><legend>Preferenze del backup</legend>
-            <Field label="Quando eseguire il backup"><select aria-label="Frequenza backup" value={m.backup.intervalMinutes} onChange={event => backup('intervalMinutes', Number(event.target.value))}><option value={0}>Solo quando lo chiedo</option><option value={30}>Ogni 30 minuti</option><option value={60}>Ogni ora</option><option value={360}>Ogni 6 ore</option><option value={1440}>Ogni giorno</option>{![0, 30, 60, 360, 1440].includes(m.backup.intervalMinutes) && <option value={m.backup.intervalMinutes}>Ogni {m.backup.intervalMinutes} minuti</option>}</select></Field>
+            <ScheduleFields schedule={schedule} nextRun={sameSchedule ? original.nextBackupAt : undefined} onChange={schedule => {backup('schedule',schedule);backup('intervalMinutes',schedule.mode === 'interval' ? schedule.minutes : 0)}}/>
             <Field label="Dove salvare la copia" detail="Scegli una cartella dedicata e vuota, separata dalle cartelle collegate."><div className="input-with-button"><input required aria-label="Destinazione backup" value={m.backup.destination} onChange={event => backup('destination', event.target.value)} placeholder="Scegli una cartella per il backup"/><button type="button" onClick={() => void chooseBackup()}><Folder size={16}/> Sfoglia</button></div></Field>
             <Field label="Conserva le versioni precedenti per" detail="Numero di giorni. Con 0 le versioni non vengono eliminate automaticamente."><input aria-label="Giorni conservazione backup" type="number" required min={0} max={36500} value={m.backup.retentionDays} onChange={event => backup('retentionDays', Number(event.target.value))}/></Field>
             <p className="field-hint">Il backup copia dal server al computer, mai al contrario. Funziona mentre Drive Tambu e aperto.</p>
@@ -204,10 +262,13 @@ function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: 
     {connecting && <p className="mount-detail" role="status">{m.statusDetail}</p>}
     {m.status === 'error' && <ErrorBox message={m.statusDetail}/>}
     {m.backupStatus === 'error' && <ErrorBox message="Il backup non e stato completato. Apri Attivita per i dettagli."/>}
-    <div className="mount-bottom"><div className="backup-caption"><DatabaseBackup size={14}/><span>{m.backupStatus === 'running' ? 'Backup in corso' : m.backup.enabled ? `Ultima copia: ${dateLabel(m.lastBackupAt)}` : 'Backup non attivo'}</span></div><div className="mount-actions">
+    <div className="mount-bottom"><div className="backup-caption"><DatabaseBackup size={14}/><span>{m.backupStatus === 'running' ? `Backup in corso${m.backupProgress?.percent != null ? ` - ${m.backupProgress.percent}% (stima)` : ''}` : m.backup.enabled ? `Ultima copia: ${dateLabel(m.lastBackupAt)}` : 'Backup non attivo'}</span></div><div className="mount-actions">
       {connected && <Button onClick={onOpen}><FolderOpen size={15}/> Apri</Button>}
       <Button kind={connected || connecting ? 'secondary' : 'primary'} disabled={stopping || (busy && !connecting)} onClick={onToggle}>{connecting ? <X size={15}/> : connected ? <Unplug size={15}/> : <ArrowUpRight size={15}/>} {connecting ? 'Annulla' : stopping ? 'Attendi...' : connected ? 'Scollega' : m.status === 'error' ? 'Riprova' : 'Collega'}</Button>
     </div></div>
+    {m.backupStatus === 'running' && <BackupProgressView progress={m.backupProgress}/>}
+    {m.backup.enabled && m.nextBackupAt && m.backupStatus !== 'running' && <p className="next-backup"><Clock3 size={13}/> Prossimo: {dateLabel(m.nextBackupAt)}</p>}
+    {m.refreshNeedsReconnect && <p className="refresh-notice">Nuovo intervallo salvato. Verra applicato quando scolleghi e ricolleghi la cartella, dopo la fine dei trasferimenti.</p>}
     {m.backup.enabled && <div className="backup-actions"><Button kind="ghost" disabled={busy || m.backupStatus === 'running'} onClick={onBackup}><DatabaseBackup size={14}/> Esegui backup</Button><Button kind="ghost" onClick={onOpenBackup}><FolderOpen size={14}/> Apri backup</Button></div>}
   </article>
 }
@@ -215,13 +276,21 @@ function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: 
 function SettingsPage({snapshot, deps, onSave, onCheck, busy}: {snapshot: Snapshot; deps: Dependencies | null; onSave: (s: AppSettings) => Promise<void>; onCheck: () => void; busy: boolean}): ReactNode {
   const [executable, setExecutable] = useState(snapshot.settings.rcloneExecutable)
   const [cache, setCache] = useState(snapshot.settings.cacheMaxSize)
+  const [refresh, setRefresh] = useState(snapshot.settings.directoryRefreshSeconds ?? DEFAULT_REFRESH_SECONDS)
+  const [refreshError, setRefreshError] = useState('')
+  const [refreshResult, setRefreshResult] = useState('')
+  useEffect(() => setRefresh(snapshot.settings.directoryRefreshSeconds ?? DEFAULT_REFRESH_SECONDS), [snapshot.settings.directoryRefreshSeconds])
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
   useEffect(() => {setExecutable(snapshot.settings.rcloneExecutable); setCache(snapshot.settings.cacheMaxSize)}, [snapshot.settings.rcloneExecutable, snapshot.settings.cacheMaxSize])
   useEffect(() => {setResult(''); setError('')}, [snapshot.settings.defaultRemote, snapshot.settings.rcloneExecutable])
   const remote = selectedRemote(deps?.remotes ?? [], snapshot.settings.defaultRemote)
-  const update = (values: Partial<AppSettings>): Promise<void> => onSave({...snapshot.settings, ...values})
+  const update = async (values: Partial<AppSettings>): Promise<void> => {
+    setError('')
+    try { await onSave({...snapshot.settings, ...values}) }
+    catch (failure) {setError(messageOf(failure));throw failure}
+  }
   const check = async (): Promise<void> => {
     setChecking(true); setResult(''); setError('')
     try { setResult(await window.drive.checkConnection(remote)) }
@@ -236,15 +305,24 @@ function SettingsPage({snapshot, deps, onSave, onCheck, busy}: {snapshot: Snapsh
   return <div className="page-block settings-page"><div className="page-heading"><span className="eyebrow">A MODO TUO</span><h1>Impostazioni</h1><p>Connessione, aspetto e preferenze.</p></div>
     <section className="settings-panel"><div className="section-title"><Server size={21}/><div><h2>Il tuo server</h2><p>{remote ? `${serverName(remote)} e gia salvato su questo computer.` : 'Rileva e scegli una connessione salvata.'}</p></div></div>
       {deps?.remotes.length ? <>
-        {deps.remotes.length > 1 && <Field label="Server predefinito"><select aria-label="Server predefinito" disabled={busy} value={snapshot.settings.defaultRemote} onChange={event => void update({defaultRemote: event.target.value})}><option value="">Scegli ogni volta</option>{deps.remotes.map(r => <option key={r} value={r}>{serverName(r)}</option>)}</select></Field>}
+        {deps.remotes.length > 1 && <Field label="Server predefinito"><select aria-label="Server predefinito" disabled={busy} value={snapshot.settings.defaultRemote} onChange={event => void update({defaultRemote: event.target.value}).catch(() => {})}><option value="">Scegli ogni volta</option>{deps.remotes.map(r => <option key={r} value={r}>{serverName(r)}</option>)}</select></Field>}
         <p className="field-hint">Le impostazioni di accesso gia presenti vengono riutilizzate. Nessuna chiave viene caricata su GitHub.</p>
         <div className="button-row"><Button kind="primary" disabled={!remote || checking || busy} onClick={check}>{checking ? <LoaderCircle className="spin" size={16}/> : <ShieldCheck size={16}/>} {checking ? 'Verifico...' : 'Verifica connessione'}</Button><Button disabled={checking} onClick={() => {setResult(''); setError(''); onCheck()}}><RefreshCw size={15}/> Rileva di nuovo</Button></div>
       </> : <><p className="muted">{deps?.connectionError || (deps && !deps.rclone.ok ? deps.rclone.detail : 'Non ho trovato connessioni salvate. Riprova il rilevamento oppure controlla le opzioni avanzate.')}</p><Button disabled={busy} onClick={onCheck}><RefreshCw size={15}/> Rileva di nuovo</Button></>}
       {result && <div className="success-box" role="status"><CircleCheck size={17}/>{result}</div>}<ErrorBox message={error}/>
     </section>
-    <section className="settings-panel"><div className="section-title"><Sun size={21}/><div><h2>Aspetto</h2><p>Il tema si applica subito e viene ricordato.</p></div></div><div className="theme-options" aria-label="Tema dell'app">{themes.map(theme => <button key={theme.value} type="button" aria-label={theme.aria} aria-pressed={snapshot.settings.theme === theme.value} className={snapshot.settings.theme === theme.value ? 'selected' : ''} disabled={busy} onClick={() => update({theme: theme.value})}>{theme.icon}<span>{theme.label}</span>{snapshot.settings.theme === theme.value && <Check size={14}/>}</button>)}</div></section>
-    <section className="settings-panel"><div className="section-title"><Laptop size={21}/><div><h2>Sul tuo computer</h2><p>Pannello compatto all'avvio. Espandi quando ti serve piu spazio.</p></div></div><div className="setting-switch"><div><strong>Avvia con il computer</strong><p>Disponibile dopo l'accesso al tuo account.</p></div><Toggle label="Avvia con il computer" disabled={busy} checked={snapshot.settings.startAtLogin} onChange={value => void update({startAtLogin: value})}/></div><div className="setting-switch"><div><strong>Continua quando chiudo la finestra</strong><p>I collegamenti e i backup restano attivi. Per fermarli usa Esci.</p></div><Toggle label="Continua quando chiudo la finestra" disabled={busy} checked={snapshot.settings.closeToTray} onChange={value => void update({closeToTray: value})}/></div></section>
-    <details className="settings-panel advanced"><summary><Settings2 size={17}/> Opzioni avanzate</summary><p className="field-hint">Normalmente non serve modificarle. Utili per assistenza o installazioni personalizzate.</p><p className="field-hint">{deps?.note}</p><Field label="Componente di collegamento (rclone)"><div className="input-with-button"><input aria-label="Eseguibile rclone" value={executable} onChange={event => setExecutable(event.target.value)}/><button type="button" onClick={async () => {try {const value = await window.drive.chooseExecutable(); if (value) setExecutable(value)} catch (failure) {setError(messageOf(failure))}}}>Sfoglia</button></div></Field><Field label="Limite indicativo dello spazio temporaneo" detail="I file aperti possono usare spazio locale. Durante scritture e trasferimenti il limite puo essere superato."><input aria-label="Spazio temporaneo" value={cache} onChange={event => setCache(event.target.value)} placeholder="5G"/></Field><Button disabled={busy} onClick={() => update({rcloneExecutable: executable, cacheMaxSize: cache})}>Salva opzioni avanzate</Button></details>
+    <section className="settings-panel"><div className="section-title"><Sun size={21}/><div><h2>Aspetto</h2><p>Il tema si applica subito e viene ricordato.</p></div></div><div className="theme-options" aria-label="Tema dell'app">{themes.map(theme => <button key={theme.value} type="button" aria-label={theme.aria} aria-pressed={snapshot.settings.theme === theme.value} className={snapshot.settings.theme === theme.value ? 'selected' : ''} disabled={busy} onClick={() => update({theme: theme.value}).catch(() => {})}>{theme.icon}<span>{theme.label}</span>{snapshot.settings.theme === theme.value && <Check size={14}/>}</button>)}</div></section>
+    <section className="settings-panel"><div className="section-title"><Laptop size={21}/><div><h2>Sul tuo computer</h2><p>Pannello compatto all'avvio. Espandi quando ti serve piu spazio.</p></div></div><div className="setting-switch"><div><strong>Avvia con il computer</strong><p>Disponibile dopo l'accesso al tuo account.</p></div><Toggle label="Avvia con il computer" disabled={busy} checked={snapshot.settings.startAtLogin} onChange={value => void update({startAtLogin: value}).catch(() => {})}/></div><div className="setting-switch"><div><strong>Continua quando chiudo la finestra</strong><p>I collegamenti e i backup restano attivi. Per fermarli usa Esci.</p></div><Toggle label="Continua quando chiudo la finestra" disabled={busy} checked={snapshot.settings.closeToTray} onChange={value => void update({closeToTray: value}).catch(() => {})}/></div></section>
+    <section className="settings-panel"><div className="section-title"><RefreshCw size={21}/><div><h2>Aggiornamento delle cartelle</h2><p>Intervallo predefinito per rileggere l'elenco dei file.</p></div></div>
+      <Field label="Intervallo generale" detail="Da 5 secondi a 24 ore. Le cartelle con un intervallo personalizzato non vengono modificate."><DurationInput label="Intervallo aggiornamento generale" unitLabel="Unita aggiornamento generale" value={refresh} onChange={v => {setRefresh(v);setRefreshError('');setRefreshResult('')}} units={refreshUnits} min={5} max={86400}/></Field>
+      <p className="field-hint">Gli elenchi vengono riletti quando richiesti dopo la scadenza, senza scaricare tutti i file. Per le cartelle gia collegate, il nuovo valore si applica alla prossima riconnessione.</p>
+      <Button disabled={busy} onClick={async () => {
+        setRefreshError(''); setRefreshResult('')
+        try { await update({directoryRefreshSeconds:refresh}); setRefreshResult('Intervallo salvato.') }
+        catch (failure) { setRefreshError(messageOf(failure)) }
+      }}><Check size={15}/> Salva intervallo</Button><ErrorBox message={refreshError}/>{refreshResult && <p className="success-box" role="status">{refreshResult}</p>}
+    </section>
+    <details className="settings-panel advanced"><summary><Settings2 size={17}/> Opzioni avanzate</summary><p className="field-hint">Normalmente non serve modificarle. Utili per assistenza o installazioni personalizzate.</p><p className="field-hint">{deps?.note}</p><Field label="Componente di collegamento (rclone)"><div className="input-with-button"><input aria-label="Eseguibile rclone" value={executable} onChange={event => setExecutable(event.target.value)}/><button type="button" onClick={async () => {try {const value = await window.drive.chooseExecutable(); if (value) setExecutable(value)} catch (failure) {setError(messageOf(failure))}}}>Sfoglia</button></div></Field><Field label="Limite indicativo dello spazio temporaneo" detail="I file aperti possono usare spazio locale. Durante scritture e trasferimenti il limite puo essere superato."><input aria-label="Spazio temporaneo" value={cache} onChange={event => setCache(event.target.value)} placeholder="5G"/></Field><Button disabled={busy} onClick={() => update({rcloneExecutable: executable, cacheMaxSize: cache}).catch(() => {})}>Salva opzioni avanzate</Button></details>
     <div className="settings-footer"><span>Drive Tambu {snapshot.appVersion}</span><Button kind="ghost" onClick={() => window.drive.quit()}><LogOut size={16}/> Esci da Drive Tambu</Button></div>
   </div>
 }
@@ -307,12 +385,16 @@ export default function App(): ReactNode {
           {snapshot.mounts.length === 0 ? <div className="empty-state"><span className="empty-folder"><FolderOpen size={46}/></span><h2>Il tuo spazio inizia qui.</h2><p>Scegli una cartella sul server e ritrovala sul computer, senza scaricare tutto l'archivio.</p><Button kind="primary" disabled={loadingDeps} onClick={addFolder}>{loadingDeps ? <LoaderCircle size={17} className="spin"/> : <Plus size={17}/>} {loadingDeps ? 'Rilevo il server...' : 'Aggiungi la prima cartella'}</Button></div> : <div className="mount-list">{visible.map(m => <MountCard key={m.id} m={m} busy={busy.has(m.id)} onEdit={() => setEditing(m)} onOpen={() => void task('open', () => window.drive.openMount(m.id))} onToggle={() => void task(m.id, () => m.status === 'connected' || m.status === 'connecting' ? window.drive.disconnect(m.id) : window.drive.connect(m.id))} onBackup={() => void task(m.id, () => window.drive.backupNow(m.id), 'Backup completato.')} onOpenBackup={() => void task('open-backup', () => window.drive.openBackup(m.id))}/>)}{visible.length === 0 && <div className="empty-list">Nessuna cartella corrisponde alla ricerca.</div>}</div>}
           <div className="privacy-note"><HardDrive size={15}/><span>I file restano sul server. Quelli aperti possono occupare spazio temporaneo sul computer.</span></div>
         </div>}
-        {page === 'settings' && <SettingsPage snapshot={snapshot} deps={deps} busy={busy.has('settings')} onCheck={() => void refreshDependencies()} onSave={async values => {await task('settings', () => window.drive.saveSettings(values)); void refreshDependencies()}}/>}
+        {page === 'settings' && <SettingsPage snapshot={snapshot} deps={deps} busy={busy.has('settings')} onCheck={() => void refreshDependencies()} onSave={async values => {
+          setBusy(value => new Set(value).add('settings'))
+          try {await window.drive.saveSettings(values);await refresh();void refreshDependencies()}
+          finally {setBusy(value => {const next = new Set(value);next.delete('settings');return next})}
+        }}/>}
         {page === 'activity' && <ActivityPage log={snapshot.log}/>}
       </main>
       <nav className="compact-nav" aria-label="Navigazione pannello"><button className={page === 'folders' ? 'selected' : ''} onClick={() => setPage('folders')}><Folder size={18}/><span>Cartelle</span></button><button className={page === 'activity' ? 'selected' : ''} onClick={() => setPage('activity')}><Activity size={18}/><span>Attivit&agrave;</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings2 size={18}/><span>Impostazioni</span></button></nav>
     </div>
-    {editing && <MountModal original={editing} remotes={deps?.remotes ?? []} platform={snapshot.platform} onClose={() => setEditing(null)} onSave={saveMount} onDelete={deleteMount} onSettings={() => {setEditing(null); setPage('settings')}}/>}
+    {editing && <MountModal defaultRefreshSeconds={snapshot.settings.directoryRefreshSeconds} original={editing} remotes={deps?.remotes ?? []} platform={snapshot.platform} onClose={() => setEditing(null)} onSave={saveMount} onDelete={deleteMount} onSettings={() => {setEditing(null); setPage('settings')}}/>}
     {notice && <div className={`toast toast-${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <CircleAlert size={18}/> : <CircleCheck size={18}/>}<span>{notice.text}</span><button aria-label="Chiudi notifica" onClick={() => setNotice(null)}><X size={16}/></button></div>}
   </div>
 }

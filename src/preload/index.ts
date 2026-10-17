@@ -19,6 +19,7 @@ const api: DriveAPI = {
   connect: (id: string) => ipcRenderer.invoke('drive:connect', id),
   disconnect: (id: string) => ipcRenderer.invoke('drive:disconnect', id),
   openMount: (id: string) => ipcRenderer.invoke('drive:openMount', id),
+  createShortcut: (id: string) => ipcRenderer.invoke('drive:createShortcut', id),
   checkRemote: (id: string) => ipcRenderer.invoke('drive:checkRemote', id),
   backupNow: (id: string) => ipcRenderer.invoke('drive:backupNow', id),
   openBackup: (id: string) => ipcRenderer.invoke('drive:openBackup', id),

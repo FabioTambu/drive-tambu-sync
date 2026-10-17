@@ -3,9 +3,26 @@ export type Theme = 'system' | 'light' | 'dark'
 export type WindowMode = 'compact' | 'expanded'
 export type BackupStatus = 'idle' | 'running' | 'error'
 
+export type BackupSchedule =
+  | { mode: 'manual' }
+  | { mode: 'interval'; minutes: number }
+  | { mode: 'daily'; time: string }
+  | { mode: 'weekly'; weekdays: number[]; time: string }
+
+export interface BackupProgress {
+  phase: 'checking' | 'copying' | 'finishing' | 'complete'
+  percent: number | null
+  bytes: number
+  totalBytes: number
+  speed: number
+  checks: number
+  transfers: number
+}
+
 export interface BackupConfig {
   enabled: boolean
-  intervalMinutes: number // 0 = manual only
+  intervalMinutes: number // legacy compatibility; calendar schedules use 0
+  schedule?: BackupSchedule
   destination: string     // local, outside any mounted folder
   retentionDays: number   // 0 = keep forever
 }
@@ -18,6 +35,9 @@ export interface MountConfig {
   localPath: string       // local mount point
   autoConnect: boolean
   backup: BackupConfig
+  directoryRefreshSeconds?: number | null // null/undefined = use general setting
+  nextBackupAt?: string
+  backupTimeZone?: string
   lastBackupAt?: string
   lastBackupAttemptAt?: string
 }
@@ -29,6 +49,7 @@ export interface AppSettings {
   closeToTray: boolean
   theme: Theme
   defaultRemote: string
+  directoryRefreshSeconds: number
 }
 
 export interface StoredConfig {
@@ -42,6 +63,8 @@ export interface MountView extends MountConfig {
   statusDetail: string
   backupStatus: BackupStatus
   backupDetail: string
+  backupProgress?: BackupProgress
+  refreshNeedsReconnect?: boolean
 }
 
 export interface Snapshot {
@@ -85,6 +108,7 @@ export interface DriveAPI {
   connect(id: string): Promise<void>
   disconnect(id: string): Promise<void>
   openMount(id: string): Promise<void>
+  createShortcut(id: string): Promise<string | null>
   checkRemote(id: string): Promise<string>
   backupNow(id: string): Promise<void>
   openBackup(id: string): Promise<void>

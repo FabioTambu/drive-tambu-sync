@@ -305,3 +305,28 @@ svg { flex-shrink: 0; vertical-align: middle; }
   --shadow: 0 5px 25px rgb(0 0 0 / 9%); --modal-shadow: 0 24px 90px rgb(0 0 0 / 55%);
   }
 }
+
+/* Scheduling and progress share the light/dark theme tokens. */
+.duration-input { display: grid; grid-template-columns: minmax(0,1fr) minmax(100px,.8fr); gap: 9px; width: 100%; }
+.duration-input input, .duration-input select { width: 100%; min-width: 0; }
+.schedule-fields { display: grid; gap: 12px; }
+.weekday-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.weekday-options button { border: 1px solid var(--line); background: var(--input); color: var(--muted); padding: 9px 10px; border-radius: 10px; font-size: 12px; min-width: 38px; cursor: pointer; }
+.weekday-options button.selected { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.schedule-preview { display: flex; align-items: flex-start; gap: 8px; padding: 11px; background: var(--surface-soft); border-radius: 10px; font-size: 12px; }
+.schedule-preview svg { flex-shrink: 0; margin-top: 2px; }
+.refresh-preferences, .shortcut-preferences { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 6px; }
+.refresh-preferences h3 { font-size: 13px; }
+.shortcut-preferences { display: grid; gap: 8px; }
+.shortcut-preferences > .button { justify-self: start; }
+.shortcut-preferences .success-box { overflow-wrap: anywhere; }
+.backup-caption { min-width: 0; }
+.backup-caption span { overflow-wrap: anywhere; }
+.backup-progress { padding-top: 10px; }
+.progress-track { background: var(--surface-soft); height: 5px; overflow: hidden; border-radius: 10px; }
+.progress-track > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .2s ease; }
+.backup-progress p { font-size: 11px; color: var(--muted); margin-top: 7px; overflow-wrap: anywhere; }
+.progress-checking, .next-backup { display: flex; align-items: center; gap: 6px; }
+.next-backup { font-size: 11px; color: var(--muted); margin-top: 10px; }
+.refresh-notice { font-size: 11px; color: var(--amber); background: var(--amber-soft); padding: 10px; border-radius: 9px; margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .progress-track > span { transition: none; } }

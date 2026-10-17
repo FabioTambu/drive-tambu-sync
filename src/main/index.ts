@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync, lstatSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { ConfigStore, validateMount } from './store'
+import { ConfigStore, validateMount, validateShortcutLocation } from './store'
 import { MountManager } from './mounts'
 import { BackupManager } from './backups'
 import { checkRemoteDirectory, diagnostics, errorDetails, listRemoteDirectories } from './diagnostics'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
+import { requestedFolder, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
 import type { AppSettings, MountConfig, Snapshot, WindowMode } from '../shared/types'
 
 let window: BrowserWindow | null = null
@@ -15,6 +16,7 @@ let tray: Tray | null = null
 let store: ConfigStore
 let mounts: MountManager
 let backups: BackupManager
+let folderOpener: SavedFolderOpener
 let exiting = false
 let cleanupStarted = false
 let nativeDialogDepth = 0
@@ -37,7 +39,8 @@ function snapshot(): Snapshot {
     appVersion: app.getVersion(), platform: process.platform, windowMode: mode,
     dark: nativeTheme.shouldUseDarkColors, settings: store.settings,
     mounts: store.mounts.map(m => ({ ...m, status: mounts.state(m.id).status, statusDetail: mounts.state(m.id).detail,
-      backupStatus: backups.state(m.id).status, backupDetail: backups.state(m.id).detail })), log: [...logLines]
+      backupStatus: backups.state(m.id).status, backupDetail: backups.state(m.id).detail,
+      backupProgress: backups.state(m.id).progress, refreshNeedsReconnect: mounts.needsRefreshReconnect(m.id) })), log: [...logLines]
   }
 }
 function autostart(enabled: boolean): void {
@@ -159,6 +162,21 @@ async function confirmDisconnect(name: string): Promise<boolean> {
   }))
   return result.response === 1
 }
+function handleShortcut(argv: string[]): void {
+  void (async () => {
+    const id = requestedFolder(argv)
+    if (!id) return
+    showWindow()
+    log('Apertura della cartella dal collegamento...')
+    await folderOpener.open(id)
+  })().catch(error => {
+    showWindow()
+    const message = error instanceof Error ? error.message : String(error)
+    log(`Collegamento: ${message}`)
+    dialog.showErrorBox('Apri cartella', message)
+  })
+}
+
 function registerHandlers(): void {
   const guard = (event: Electron.IpcMainInvokeEvent): void => {
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Richiesta non autorizzata.')
@@ -251,6 +269,37 @@ function registerHandlers(): void {
     if (mounts.state(id).status !== 'connected') throw new Error('Collega la cartella prima di aprirla.')
     const error = await shell.openPath(store.find(id).localPath); if (error) throw new Error(error)
   })
+  ipcMain.handle('drive:createShortcut', async (e, id: string) => {
+    guard(e)
+    const m = store.find(id)
+    if (!app.isPackaged) throw new Error("Crea il collegamento dalla versione installata di Drive Tambu, non dall'ambiente di sviluppo.")
+    const extension = process.platform === 'win32' ? 'lnk' : 'desktop'
+    const result = await withDialog(() => dialog.showSaveDialog(window!, {
+      title: 'Crea collegamento alla cartella',
+      defaultPath: path.join(app.getPath('desktop'), `${shortcutName(m.name)}.${extension}`),
+      filters: [{name:'Collegamento',extensions:[extension]}],
+      properties: ['showOverwriteConfirmation', 'createDirectory']
+    }))
+    if (result.canceled || !result.filePath) return null
+    const destination = result.filePath
+    if (path.extname(destination).toLowerCase() !== `.${extension}`) throw new Error(`Il collegamento deve avere estensione .${extension}.`)
+    validateShortcutLocation(destination, store.mounts)
+    try {
+      const stat = lstatSync(destination)
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Scegli un nuovo file: la destinazione non e un file regolare.')
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    if (process.platform === 'win32') {
+      const ok = shell.writeShortcutLink(destination, 'create', {
+        target: process.execPath, args: `--open-folder ${m.id}`, cwd: path.dirname(process.execPath),
+        description: `Apri ${m.name} con Drive Tambu`, icon: process.execPath, iconIndex: 0
+      })
+      if (!ok) throw new Error('Non riesco a creare il collegamento. Scegli una posizione in cui puoi scrivere.')
+    } else if (process.platform === 'linux') {
+      writeLinuxShortcut(destination, process.env.APPIMAGE || process.execPath, m.id, m.name)
+    } else throw new Error('Questo sistema non e supportato per i collegamenti.')
+    log(`${m.name}: collegamento creato`)
+    return destination
+  })
   ipcMain.handle('drive:backupNow', async (e, id: string) => { guard(e); await backups.run(id) })
   ipcMain.handle('drive:openBackup', async (e, id: string) => {
     guard(e); const root = store.find(id).backup.destination
@@ -290,10 +339,14 @@ app.on('window-all-closed', () => { if (!tray) app.quit() })
 app.whenReady().then(() => {
   try {
     if (!app.requestSingleInstanceLock()) { exiting = true; app.quit(); return }
-    app.on('second-instance', showWindow)
+    app.on('second-instance', (_event, argv) => {showWindow();handleShortcut(argv)})
     store = new ConfigStore()
     mounts = new MountManager(store, changed, log)
     backups = new BackupManager(store, changed, log)
+    folderOpener = new SavedFolderOpener({
+      find: id => store.find(id), state: id => mounts.state(id), connect: id => mounts.connect(id),
+      open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted
+    })
     applyTheme()
     nativeTheme.on('updated', () => {
       window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151821' : '#f6f8fc'); changed()
@@ -305,6 +358,7 @@ app.whenReady().then(() => {
       if (!exiting && !cleanupStarted) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
     }, 1800)
     log('Drive Tambu avviato')
+    handleShortcut(process.argv)
   } catch (error) {
     dialog.showErrorBox('Drive Tambu', error instanceof Error ? error.message : String(error)); exiting = true; app.quit()
   }
