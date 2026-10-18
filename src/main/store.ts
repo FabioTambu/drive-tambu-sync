@@ -35,6 +35,8 @@ const inside = (child: string, parent: string): boolean => {
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel))
 }
 
+export function localPathsOverlap(a: string, b: string): boolean { return inside(a, b) || inside(b, a) }
+
 export function validateMount(value: MountConfig, all: MountConfig[]): MountConfig {
   if (!value || typeof value !== 'object') throw new Error('Dati della cartella non validi.')
   const m = structuredClone(value)

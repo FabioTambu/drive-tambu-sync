@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, lstatSync, rmSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { ConfigStore, validateMount } from './store'
-import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, stopChild, errorDetails } from './diagnostics'
+import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, errorDetails } from './diagnostics'
 import type { BackupStatus, MountConfig, BackupProgress } from '../shared/types'
 import { isBackupDue } from '../shared/schedule'
 import { JsonLogReader, progressFromStats } from './backup-progress'
@@ -63,6 +63,9 @@ export class BackupManager {
   private timer: NodeJS.Timeout | undefined
   private startupTimer: NodeJS.Timeout | undefined
   private stopped = false
+  private paused = false
+  pauseScheduling(): void { this.paused = true }
+  resumeScheduling(): void { this.paused = false }
   constructor(private store: ConfigStore, private changed: () => void, private log: (line: string) => void) {}
 
   state(id: string): { status: BackupStatus; detail: string; progress?: BackupProgress } {
@@ -79,7 +82,7 @@ export class BackupManager {
   }
 
   private async checkSchedule(): Promise<void> {
-    if (this.stopped) return
+    if (this.stopped || this.paused) return
     if ([...this.jobs.values()].some(j => j.state === 'running')) return
     this.store.reconcileScheduleTimeZone()
     const now = new Date()
@@ -92,6 +95,7 @@ export class BackupManager {
   }
 
   async run(id: string): Promise<void> {
+    if (this.paused) throw new Error('Completa o annulla prima l\'operazione aperta.')
     if (this.stopped) throw new Error('Il programma si sta chiudendo. Riaprilo prima di eseguire il backup.')
     const m = validateMount(this.store.find(id), this.store.mounts)
     if (!m.backup.enabled) throw new Error('Attiva prima il backup nelle impostazioni della cartella.')
@@ -175,10 +179,11 @@ export class BackupManager {
   }
 
   stop(): void {
+    if ([...this.jobs.values()].some(job => job.state === 'running')) throw new Error('Attendi il completamento del backup.')
     this.stopped = true
     if (this.timer) clearInterval(this.timer)
     if (this.startupTimer) clearTimeout(this.startupTimer)
     this.timer = undefined
-    for (const job of this.jobs.values()) { job.abort?.abort(); if (job.process) stopChild(job.process) }
+
   }
 }

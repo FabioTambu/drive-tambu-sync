@@ -59,6 +59,7 @@ export interface StoredConfig {
 }
 
 export interface MountView extends MountConfig {
+  hasRuntime?: boolean
   status: ConnectionStatus
   statusDetail: string
   backupStatus: BackupStatus
@@ -74,6 +75,7 @@ export interface Snapshot {
   dark: boolean
   settings: AppSettings
   mounts: MountView[]
+  operation?: OperationView | null
   log: string[]
 }
 
@@ -103,7 +105,8 @@ export interface DriveAPI {
   hideWindow(): Promise<void>
   minimizeWindow(): Promise<void>
   quit(): Promise<void>
-  saveMount(mount: MountConfig): Promise<void>
+  saveMount(mount: MountConfig): Promise<boolean>
+  respondToOperation(id: string, reply: OperationReply): Promise<void>
   deleteMount(id: string): Promise<void>
   connect(id: string): Promise<void>
   disconnect(id: string): Promise<void>
@@ -114,4 +117,15 @@ export interface DriveAPI {
   openBackup(id: string): Promise<void>
   saveSettings(settings: AppSettings): Promise<void>
   onChanged(callback: () => void): () => void
+}
+
+export type OperationReply = 'confirm' | 'cancel' | 'retry' | 'background'
+export interface OperationView {
+  id: string
+  kind: 'quit' | 'disconnect' | 'remove' | 'move'
+  name?: string
+  from?: string
+  to?: string
+  phase: 'checking' | 'confirm' | 'blocked' | 'working'
+  message: string
 }

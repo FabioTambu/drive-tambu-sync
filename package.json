@@ -1,6 +1,6 @@
 {
   "name": "drive-tambu",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Drive Tambu: cartelle remote come locali, con rclone e backup protetti",
   "author": "Drive Tambu fabio.tamburini.07@gmail.com",
@@ -58,7 +58,9 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "target": [

@@ -1,0 +1,159 @@
+{
+  "version": "0.4.0",
+  "baseCommit": "a8134367539ee6ef0942243d2735356d1fe6766d",
+  "contents": "source update, not installer",
+  "files": [
+    {
+      "path": ".github/workflows/guarded-close.yml",
+      "sha256": "10a2723d7db76ea779e834e44b8f66c39133d32eac5eb9f11cbd3b3aa21f505a"
+    },
+    {
+      "path": "AGGIORNAMENTO-0.4.md",
+      "sha256": "fa2276ba168bc4327b060dbd9dfcf1070ca9be003369eaeb2b91ae1c49a47f9e"
+    },
+    {
+      "path": "FILE-DA-RIMUOVERE.txt",
+      "sha256": "95def296004b8a003d06a0e6cbd771c6454784c9546f3766234c0fb708f38d12"
+    },
+    {
+      "path": "README.md",
+      "sha256": "a5a9d6ee3dca309dc0dbed170f348679ff5d0670611761ede69c632b466a2afc"
+    },
+    {
+      "path": "build/installer.nsh",
+      "sha256": "770074c3d2762bcc42b9628d610bc6bdef92ae51cab63c1da96bc517e3c5bd77"
+    },
+    {
+      "path": "docs/VERIFICA-0.4.md",
+      "sha256": "d542939ffbac24cbb812180f3bb43418c707457c852db353c7b3e3abeb63c3be"
+    },
+    {
+      "path": "package.json",
+      "sha256": "4a1e1887cd9dd3a2e9bc93f5688fb3febd08bae603ee9dbb6e759326e65dbad2"
+    },
+    {
+      "path": "src/main/backups.ts",
+      "sha256": "5c93cf37bf1d15c8bc8fbd9481b51c1bfed6c888ee0b582160978655143b1900"
+    },
+    {
+      "path": "src/main/control.ts",
+      "sha256": "8b20dab2989a8768d0e3bcfd1e3280c62b940d0f2348f19268f6cc2755f86455"
+    },
+    {
+      "path": "src/main/index.ts",
+      "sha256": "71caf45a417f5407416590cabd00935aee7dcabc11559f01413edb6575cb504e"
+    },
+    {
+      "path": "src/main/mounts.ts",
+      "sha256": "5d3acb20e4f56c02f69e4557e3981c839b0f0c53f5d3f171585c3bb90f6b9aa1"
+    },
+    {
+      "path": "src/main/operations.ts",
+      "sha256": "a1223767d43601d59d5e7d6608d30eb9632d092696aac2aa9861234c44780e81"
+    },
+    {
+      "path": "src/main/preflight.ts",
+      "sha256": "f7e29b5270e81fde97b85b7e12f8d44bc010fa46ead4f5ae5c144a4d75d6c5b6"
+    },
+    {
+      "path": "src/main/store.ts",
+      "sha256": "f61c7875f14452586a23dd2c0f3cb3b0e60afeaa00290699a9892eba918b118a"
+    },
+    {
+      "path": "src/preload/index.ts",
+      "sha256": "971b59174ded3f342b0b94f83907367b2d206f5ed97f15242ae281611bfb7ed4"
+    },
+    {
+      "path": "src/renderer/src/App.tsx",
+      "sha256": "fe96df42a6d38ef565be967f78918e0395fec372c236b3005ff62753cc483c2b"
+    },
+    {
+      "path": "src/renderer/src/styles.css",
+      "sha256": "061b36cbce695cda3afada69b3bafa0d1be37807c87a61bd8647719cd3eef90f"
+    },
+    {
+      "path": "src/shared/types.ts",
+      "sha256": "b3f0bfcf8c0787ffd7d9db223b20f3e633a9d7195ab3e55775eaea3135184e17"
+    },
+    {
+      "path": "tests/backups.test.cjs",
+      "sha256": "38111f83d4020a0b736778493f8ad7bbd127bbe31cc762164ed5c78ca6682253"
+    },
+    {
+      "path": "tests/control.test.cjs",
+      "sha256": "b9e47b85580d684250b0f9c9a4cd7d2c5d23fdafdf6aa4879b6e1359509c1bb2"
+    },
+    {
+      "path": "tests/guarded-app.test.cjs",
+      "sha256": "8919689b0304c3536073f72fd332144bd307fe1c57f641250da504a3e74dd2cb"
+    },
+    {
+      "path": "tests/helpers/ui.cjs",
+      "sha256": "8a2b34f7f705b2880a740b1e4e9a4a03fe5ff61dd5b35ed9a2f1f294a77faeec"
+    },
+    {
+      "path": "tests/installer.test.cjs",
+      "sha256": "d0ec319c0528734f26bb8a87b2b31b74523ad2f28c7daa7ddd08384f36dc2ab9"
+    },
+    {
+      "path": "tests/mounts.test.cjs",
+      "sha256": "f922fd1701f2becc9645f1a35989935cda2ae39ebf96cd971423425d82b7f386"
+    },
+    {
+      "path": "tests/native-helpers.test.cjs",
+      "sha256": "5bbc9dec0771b7598ea965a4aea0caf164987e57362c9f30040d5b0c833bf59b"
+    },
+    {
+      "path": "tests/native-wiring.test.cjs",
+      "sha256": "7e0bf129b1f062aee4649a53edcfa84d8272e106e9484d43e318448daa639282"
+    },
+    {
+      "path": "tests/native/guarded.cjs",
+      "sha256": "835a9f6235c7b01e5d4b21a62a728c70fa135ab4b76a52d42e90b7ce1456b3a0"
+    },
+    {
+      "path": "tests/native/helpers/fixture.cjs",
+      "sha256": "087b4e4d8088cb5dd80ccb08e865720d5ade1b0a19e58c42d644f2b6604c19bb"
+    },
+    {
+      "path": "tests/native/helpers/support.cjs",
+      "sha256": "675608cb07ef683c76a548e8ccfccdb245b8ec68d2bffa03fef0d73329e6915f"
+    },
+    {
+      "path": "tests/native/helpers/writer.cjs",
+      "sha256": "e45efdc204b455657ca286ad16ca92fa5b3f1fc407c8506bf2894e53d88b936d"
+    },
+    {
+      "path": "tests/operation-ui.test.cjs",
+      "sha256": "0f5e84e5746138ea1d25b14b3185fd18e3b3daf366cc6837361c8ddc590c1787"
+    },
+    {
+      "path": "tests/operations.test.cjs",
+      "sha256": "d6a59d72c7211df09b48b96a25e65a74a3f0539ea28a13e738d240503c33834d"
+    },
+    {
+      "path": "tests/preflight.test.cjs",
+      "sha256": "f6c8adeef87f994cbc9b596bae05a5654377d59c1d16278b251c3cbc58071df8"
+    },
+    {
+      "path": "tests/window.test.cjs",
+      "sha256": "eb9166464c6fedca21c764c618150d3d3f9ccfc01c7bed94f7ca9e4119cbbe34"
+    }
+  ],
+  "removeDirectories": [
+    "tools/safety-probe"
+  ],
+  "removeFiles": [
+    ".github/workflows/storage-investigation.yml",
+    "LEGGIMI-fix-marker.md",
+    "LEGGIMI-fix-report.md",
+    "tools/safety-probe/README.md",
+    "tools/safety-probe/VERIFICA-RIPROVA.md",
+    "tools/safety-probe/fixture.cjs",
+    "tools/safety-probe/native.cjs",
+    "tools/safety-probe/support.cjs",
+    "tools/safety-probe/tests/support.test.cjs",
+    "tools/safety-probe/writer.cjs"
+  ],
+  "retained": "regular tests and test-only SFTP fixtures; no custom rclone engine"
+}

@@ -3,6 +3,7 @@ import type { AppSettings, DriveAPI, MountConfig, WindowMode } from '../shared/t
 
 // Only a fixed, typed API is exposed. The renderer never receives raw ipcRenderer.
 const api: DriveAPI = {
+  respondToOperation: (id, reply) => ipcRenderer.invoke('drive:respondToOperation', id, reply),
   snapshot: () => ipcRenderer.invoke('drive:snapshot'),
   diagnostics: () => ipcRenderer.invoke('drive:diagnostics'),
   chooseDirectory: (name?: string) => ipcRenderer.invoke('drive:chooseDirectory', name),

@@ -2,14 +2,16 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, sc
 import { existsSync, mkdirSync, rmSync, writeFileSync, lstatSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { ConfigStore, validateMount, validateShortcutLocation } from './store'
-import { MountManager } from './mounts'
+import { ConfigStore, validateMount, validateShortcutLocation, localPathsOverlap } from './store'
+import { MountManager, checkMountDestination } from './mounts'
 import { BackupManager } from './backups'
+import { OperationCoordinator } from './operations'
+import type { PreflightResult } from './preflight'
 import { checkRemoteDirectory, diagnostics, errorDetails, listRemoteDirectories } from './diagnostics'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
 import { requestedFolder, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
-import type { AppSettings, MountConfig, Snapshot, WindowMode } from '../shared/types'
+import type { AppSettings, MountConfig, Snapshot, WindowMode, OperationReply } from '../shared/types'
 
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -19,6 +21,8 @@ let backups: BackupManager
 let folderOpener: SavedFolderOpener
 let exiting = false
 let cleanupStarted = false
+let operations: OperationCoordinator
+let pendingSaves = 0
 let nativeDialogDepth = 0
 let mode: WindowMode = 'compact'
 const logLines: string[] = []
@@ -37,8 +41,8 @@ function changed(): void {
 function snapshot(): Snapshot {
   return {
     appVersion: app.getVersion(), platform: process.platform, windowMode: mode,
-    dark: nativeTheme.shouldUseDarkColors, settings: store.settings,
-    mounts: store.mounts.map(m => ({ ...m, status: mounts.state(m.id).status, statusDetail: mounts.state(m.id).detail,
+    dark: nativeTheme.shouldUseDarkColors, settings: store.settings, operation: operations?.view ?? null,
+    mounts: store.mounts.map(m => ({ ...m, hasRuntime: mounts.hasRuntime(m.id), status: mounts.state(m.id).status, statusDetail: mounts.state(m.id).detail,
       backupStatus: backups.state(m.id).status, backupDetail: backups.state(m.id).detail,
       backupProgress: backups.state(m.id).progress, refreshNeedsReconnect: mounts.needsRefreshReconnect(m.id) })), log: [...logLines]
   }
@@ -132,7 +136,7 @@ function createWindow(): void {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.on('blur', () => {
-    if (mode === 'compact' && process.platform === 'win32' && tray && nativeDialogDepth === 0) window?.hide()
+    if (mode === 'compact' && process.platform === 'win32' && tray && nativeDialogDepth === 0 && !operations?.busy) window?.hide()
   })
   window.on('close', event => {
     if (exiting) return
@@ -154,16 +158,74 @@ async function ensureServer(remote: string): Promise<void> {
 function validateRequestId(value: string): void {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9-]{12,80}$/.test(value)) throw new Error('Richiesta non valida.')
 }
-async function confirmDisconnect(name: string): Promise<boolean> {
-  const result = await withDialog(() => dialog.showMessageBox(window!, {
-    type: 'warning', title: 'Scollega cartella', message: `Scollegare ${name}?`,
-    detail: 'Prima di continuare, attendi che copie e salvataggi siano terminati. Le modifiche non ancora inviate potrebbero non essere disponibili sul server.',
-    buttons: ['Mantieni collegata', 'Scollega'], defaultId: 0, cancelId: 0, noLink: true
-  }))
-  return result.response === 1
+function requireIdle(): void {
+  if (operations?.busy || cleanupStarted) throw new Error('Completa o annulla prima l\'operazione aperta.')
+}
+async function inspectWork(ids: string[]): Promise<PreflightResult> {
+  if (pendingSaves > 0) return {kind:'blocked', message:'Sto ancora verificando una modifica alle cartelle. Attendi e riprova.'}
+  for (const id of ids) {
+    const m = store.find(id)
+    if (backups.state(id).status === 'running') return {kind:'blocked', message:`Il backup di ${m.name} e in corso. Attendi oppure continua in background.`}
+    const result = await mounts.preflight(id)
+    if (result.kind !== 'confirm') return {...result, message:`${m.name}: ${result.message}`}
+  }
+  return {kind:'confirm', message:'Non risultano trasferimenti in corso.'}
+}
+function requestQuit(): Promise<boolean> {
+  const ids = store.mounts.map(m => m.id)
+  const requiresConfirmation = ids.some(id => mounts.hasRuntime(id) || mounts.state(id).status !== 'disconnected' || backups.state(id).status === 'running')
+  const promise = operations.run({kind:'quit', requiresConfirmation}, () => inspectWork(ids), async () => {
+    cleanupStarted = true
+    try {
+      for (const controller of browsing.values()) controller.abort()
+      for (const id of ids) await mounts.disconnect(id)
+      backups.stop()
+      exiting = true
+      app.quit()
+    } finally { cleanupStarted = false }
+  })
+  if (requiresConfirmation) showWindow()
+  return promise
+}
+async function changeLocalPosition(previous: MountConfig, next: MountConfig): Promise<boolean> {
+  if (localPathsOverlap(previous.localPath, next.localPath)) throw new Error('La nuova posizione deve essere separata dalla precedente, non al suo interno o attorno ad essa.')
+  checkMountDestination(next.localPath)
+  const wasConnected = mounts.state(previous.id).status === 'connected'
+  let failed = false
+  const promise = operations.run({kind:'move', name:previous.name, from:previous.localPath, to:next.localPath, requiresConfirmation:true}, async () => {
+    if (failed) return {kind:'blocked', message:'Il cambio non e stato completato. Torna alla cartella per verificarne la posizione prima di riprovare.'}
+    return inspectWork([previous.id])
+  }, async () => {
+    // Validate again after the warning: do not overwrite a newly created destination.
+    checkMountDestination(next.localPath)
+    await mounts.disconnect(previous.id)
+    mounts.cleanupOwnedDirectory(previous.id)
+    try {
+      store.saveMount(next)
+      if (wasConnected) await mounts.connect(next.id)
+      log(`${next.name}: nuova posizione ${next.localPath}`)
+    } catch (error) {
+      failed = true
+      // Never start a second mount if the new attempt still has a live/uncertain daemon.
+      if (mounts.hasRuntime(next.id)) {
+        try { await mounts.disconnect(next.id) }
+        catch { throw new Error('Il nuovo collegamento richiede una verifica. La nuova posizione e rimasta salvata; nessun secondo collegamento e stato avviato. Torna alla cartella e riprova a scollegarla.') }
+      }
+      store.saveMount(previous)
+      if (wasConnected) {
+        try { await mounts.connect(previous.id) }
+        catch { throw new Error('Ho ripristinato la posizione precedente, ma non riesco a ricollegarla. Riprova dalla cartella.') }
+      }
+      throw new Error(`Il cambio non e riuscito. La posizione precedente e stata ripristinata. ${error instanceof Error ? error.message : ''}`)
+    }
+  })
+  showWindow()
+  return promise
 }
 function handleShortcut(argv: string[]): void {
   void (async () => {
+    if (argv.includes('--request-exit')) { app.quit(); return }
+    requireIdle()
     const id = requestedFolder(argv)
     if (!id) return
     showWindow()
@@ -181,10 +243,15 @@ function registerHandlers(): void {
   const guard = (event: Electron.IpcMainInvokeEvent): void => {
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Richiesta non autorizzata.')
   }
+  ipcMain.handle('drive:respondToOperation', async (e, id: string, reply: OperationReply) => {
+    guard(e)
+    if (typeof id !== 'string' || !['confirm','cancel','retry','background'].includes(reply)) throw new Error('Risposta non valida.')
+    await operations.respond(id, reply)
+  })
   ipcMain.handle('drive:snapshot', e => { guard(e); return snapshot() })
   ipcMain.handle('drive:diagnostics', e => { guard(e); return diagnostics(store) })
   ipcMain.handle('drive:setWindowMode', (e, next: WindowMode) => { guard(e); setMode(next) })
-  ipcMain.handle('drive:hideWindow', e => { guard(e); if (store.settings.closeToTray) hideWindow(); else app.quit() })
+  ipcMain.handle('drive:hideWindow', e => { guard(e); if (operations.busy || store.settings.closeToTray) hideWindow(); else app.quit() })
   ipcMain.handle('drive:minimizeWindow', e => { guard(e); window?.minimize() })
   ipcMain.handle('drive:quit', e => { guard(e); app.quit() })
   ipcMain.handle('drive:chooseExecutable', async e => {
@@ -239,38 +306,48 @@ function registerHandlers(): void {
     guard(e); const m = store.find(id); return checkConnection(m.remote, m.remotePath)
   })
   ipcMain.handle('drive:saveMount', async (e, input: MountConfig) => {
-    guard(e)
+    guard(e); requireIdle()
     const m = validateMount(input, store.mounts)
     if (backups.state(m.id).status === 'running') throw new Error('Attendi che termini il backup prima di modificare questa cartella.')
     const previous = store.mounts.find(x => x.id === m.id)
-    const pathsChanged = !previous || previous.remote !== m.remote || normalizeRemotePath(previous.remote, previous.remotePath) !== m.remotePath || previous.localPath !== m.localPath
-    if (pathsChanged && !['disconnected', 'error'].includes(mounts.state(m.id).status)) throw new Error('Scollega la cartella prima di cambiarne la posizione.')
-    if (pathsChanged) await checkConnection(m.remote, m.remotePath)
-    store.saveMount(m)
-    log(`${m.name}: impostazioni salvate`)
+    const sameLocal = previous && (process.platform === 'win32' ? previous.localPath.toLowerCase() === m.localPath.toLowerCase() : previous.localPath === m.localPath)
+    const remoteChanged = !previous || previous.remote !== m.remote || normalizeRemotePath(previous.remote, previous.remotePath) !== m.remotePath
+    if (previous && remoteChanged && mounts.state(m.id).status !== 'disconnected') throw new Error('Scollega la cartella prima di cambiare il percorso sul server.')
+    if (previous && !sameLocal) {
+      if (remoteChanged) throw new Error('Cambia prima il percorso sul server e salva; poi cambia la posizione sul computer.')
+      return changeLocalPosition(previous, m)
+    }
+    pendingSaves++
+    try {
+      if (remoteChanged) await checkConnection(m.remote, m.remotePath)
+      requireIdle()
+      store.saveMount(m); log(`${m.name}: impostazioni salvate`)
+    } finally { pendingSaves-- }
     if (!previous && m.autoConnect) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
+    return true
   })
   ipcMain.handle('drive:deleteMount', async (e, id: string) => {
-    guard(e)
-    if (backups.state(id).status === 'running') throw new Error('Attendi la fine del backup prima di rimuovere la cartella.')
-    const m = store.find(id)
-    if (mounts.state(id).status === 'connected' && !(await confirmDisconnect(m.name))) return
-    await mounts.disconnect(id); store.deleteMount(id)
-    log(`${m.name}: collegamento rimosso. I file non sono stati cancellati.`)
+    guard(e); requireIdle(); const m = store.find(id)
+    const promise = operations.run({kind:'remove',name:m.name,requiresConfirmation:true}, () => inspectWork([id]), async () => {
+      await mounts.disconnect(id)
+      mounts.cleanupOwnedDirectory(id)
+      store.deleteMount(id); log(`${m.name}: collegamento rimosso. I file non sono stati cancellati.`)
+    })
+    showWindow(); await promise
   })
-  ipcMain.handle('drive:connect', async (e, id: string) => { guard(e); await mounts.connect(id) })
+  ipcMain.handle('drive:connect', async (e, id: string) => { guard(e); requireIdle(); await mounts.connect(id) })
   ipcMain.handle('drive:disconnect', async (e, id: string) => {
-    guard(e)
-    if (mounts.state(id).status === 'connected' && !(await confirmDisconnect(store.find(id).name))) return
-    await mounts.disconnect(id)
+    guard(e); requireIdle(); const m = store.find(id)
+    const promise = operations.run({kind:'disconnect',name:m.name,requiresConfirmation:mounts.state(id).status !== 'disconnected'}, () => inspectWork([id]), () => mounts.disconnect(id))
+    showWindow(); await promise
   })
   ipcMain.handle('drive:openMount', async (e, id: string) => {
-    guard(e)
+    guard(e); requireIdle()
     if (mounts.state(id).status !== 'connected') throw new Error('Collega la cartella prima di aprirla.')
     const error = await shell.openPath(store.find(id).localPath); if (error) throw new Error(error)
   })
   ipcMain.handle('drive:createShortcut', async (e, id: string) => {
-    guard(e)
+    guard(e); requireIdle()
     const m = store.find(id)
     if (!app.isPackaged) throw new Error("Crea il collegamento dalla versione installata di Drive Tambu, non dall'ambiente di sviluppo.")
     const extension = process.platform === 'win32' ? 'lnk' : 'desktop'
@@ -300,39 +377,25 @@ function registerHandlers(): void {
     log(`${m.name}: collegamento creato`)
     return destination
   })
-  ipcMain.handle('drive:backupNow', async (e, id: string) => { guard(e); await backups.run(id) })
+  ipcMain.handle('drive:backupNow', async (e, id: string) => { guard(e); requireIdle(); await backups.run(id) })
   ipcMain.handle('drive:openBackup', async (e, id: string) => {
     guard(e); const root = store.find(id).backup.destination
     if (!root || !existsSync(root)) throw new Error('Non esiste ancora un backup. Avviane uno prima.')
     const error = await shell.openPath(root); if (error) throw new Error(error)
   })
   ipcMain.handle('drive:saveSettings', (e, settings: AppSettings) => {
-    guard(e); store.saveSettings(settings); autostart(settings.startAtLogin); applyTheme(); changed()
+    guard(e); requireIdle(); store.saveSettings(settings); autostart(settings.startAtLogin); applyTheme(); changed()
   })
 }
 
 app.on('before-quit', event => {
   if (exiting) return
   event.preventDefault()
-  if (cleanupStarted) return
-  cleanupStarted = true
-  void (async () => {
-    if (store && window && store.mounts.some(m => ['connected', 'connecting'].includes(mounts.state(m.id).status) || backups.state(m.id).status === 'running')) {
-      const answer = await withDialog(() => dialog.showMessageBox(window!, {
-        type: 'warning', title: 'Esci da Drive Tambu', message: 'Ci sono collegamenti o backup attivi.',
-        detail: 'Attendi la fine di copie e salvataggi. Uscendo, i collegamenti e gli eventuali backup in corso saranno interrotti.',
-        buttons: ['Resta aperto', 'Esci comunque'], defaultId: 0, cancelId: 0, noLink: true
-      }))
-      if (answer.response !== 1) return
-    }
-    for (const controller of browsing.values()) controller.abort()
-    backups?.stop()
-    await mounts?.disconnectAll()
-    exiting = true; app.quit()
-  })().catch(error => {
-    backups?.startScheduler()
-    dialog.showErrorBox('Drive Tambu', error instanceof Error ? error.message : String(error))
-  }).finally(() => { cleanupStarted = false })
+  if (!operations || !store) return
+  if (operations.busy) { showWindow(); return }
+  void requestQuit().catch(error => {
+    showWindow(); log(error instanceof Error ? error.message : String(error))
+  })
 })
 app.on('window-all-closed', () => { if (!tray) app.quit() })
 
@@ -343,9 +406,12 @@ app.whenReady().then(() => {
     store = new ConfigStore()
     mounts = new MountManager(store, changed, log)
     backups = new BackupManager(store, changed, log)
+    operations = new OperationCoordinator({
+      changed, pause: () => backups.pauseScheduling(), resume: () => backups.resumeScheduling(), hide: hideWindow
+    })
     folderOpener = new SavedFolderOpener({
       find: id => store.find(id), state: id => mounts.state(id), connect: id => mounts.connect(id),
-      open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted
+      open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted || operations.busy
     })
     applyTheme()
     nativeTheme.on('updated', () => {
@@ -355,7 +421,7 @@ app.whenReady().then(() => {
     screen.on('display-metrics-changed', () => { if (mode === 'compact') positionWindow() })
     screen.on('display-removed', positionWindow)
     for (const m of store.mounts.filter(x => x.autoConnect)) setTimeout(() => {
-      if (!exiting && !cleanupStarted) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
+      if (!exiting && !cleanupStarted && !operations.busy) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
     }, 1800)
     log('Drive Tambu avviato')
     handleShortcut(process.argv)

@@ -1,4 +1,4 @@
-name: Drive Tambu - Test nativi sicurezza
+name: Drive Tambu - Verifica disconnessione
 
 on:
   workflow_dispatch:
@@ -22,8 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify test helpers (no npm dependencies)
-        run: node --test tools/safety-probe/tests/support.test.cjs
+      - name: Install build dependencies without Electron runtime download
+        run: npm install --ignore-scripts
+      - name: Unit and regression tests
+        run: npm test
       - name: Initialize report
         run: node -e "const fs=require('node:fs');fs.mkdirSync('.safety-probe-results',{recursive:true});fs.writeFileSync('.safety-probe-results/setup.json',JSON.stringify({status:'setup-started',productionSafetyCertified:false,platform:process.platform}));"
       - name: Install pinned rclone and WinFsp on disposable Windows VM
@@ -64,8 +66,8 @@ jobs:
           exe="$RUNNER_TEMP/rclone-probe-bin/rclone-v1.74.4-linux-amd64/rclone"
           chmod u+x "$exe"
           echo "SAFETY_RCLONE=$exe" >> "$GITHUB_ENV"
-      - name: Real SFTP mount, open writer and closed-file recovery probes
-        run: node tools/safety-probe/native.cjs
+      - name: Production preflight and guarded disconnection on disposable SFTP
+        run: node -r ./tests/register.cjs tests/native/guarded.cjs
       - name: Show diagnostic reports (even when probes fail)
         if: always()
         run: |

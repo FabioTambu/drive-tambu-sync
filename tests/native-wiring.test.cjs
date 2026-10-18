@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
+const root=path.join(__dirname,'..')
+test('native verification imports the production mount and operation controls, not a fork',()=>{const p=path.join(root,'tests/native/guarded.cjs');assert.ok(fs.existsSync(p));const s=fs.readFileSync(p,'utf8');assert.match(s,/src\/main\/mounts.ts/);assert.match(s,/src\/main\/operations.ts/);assert.match(s,/assertHostedRunner/);assert.match(s,/preflight/);assert.doesNotMatch(s,/productionSafetyCertified:true/)})
+test('obsolete characterization tools no longer have an active workflow',()=>{assert.equal(fs.existsSync(path.join(root,'.github/workflows/storage-investigation.yml')),false);assert.equal(fs.existsSync(path.join(root,'tools/safety-probe/native.cjs')),false);assert.ok(fs.existsSync(path.join(root,'.github/workflows/guarded-close.yml')))})

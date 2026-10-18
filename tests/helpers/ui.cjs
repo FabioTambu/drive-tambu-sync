@@ -13,7 +13,7 @@ const old=Module._load
 try{
  Module._load=function(id,...args){if(id==='react')return react;if(id==='react/jsx-runtime')return jsx;if(id==='lucide-react')return new Proxy({},{get:(_t,key)=>props=>({type:'svg',props:{...props,'data-icon':key}})});return old.call(this,id,...args)}
  const out=ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}})
- m._compile(out.outputText+'\nexports.testComponents={MountModal,MountCard,SettingsPage,ScheduleFields:typeof ScheduleFields===\'function\'?ScheduleFields:null};',filename)
+ m._compile(out.outputText+'\nexports.testComponents={MountModal,MountCard,SettingsPage,OperationDialog:typeof OperationDialog===\'function\'?OperationDialog:null,ScheduleFields:typeof ScheduleFields===\'function\'?ScheduleFields:null};',filename)
 }finally{Module._load=old}
 function expand(n){if(n==null||typeof n==='boolean')return [];if(Array.isArray(n))return n.flatMap(expand);if(typeof n!=='object')return [n];if(typeof n.type==='function')return expand(n.type(n.props));return [{...n,children:expand(n.props.children)}]}
 const flat=nodes=>nodes.flatMap(n=>typeof n==='object'?[n,...flat(n.children||[])]:[n])

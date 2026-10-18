@@ -6,7 +6,7 @@ import {
   LoaderCircle, LogOut, Maximize2, Minimize2, Minus, Monitor, Moon, MoreHorizontal,
   Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, Sun, Trash2, Unplug, X
 } from 'lucide-react'
-import type { AppSettings, Dependencies, MountConfig, MountView, RemoteListing, Snapshot, Theme, BackupSchedule, BackupProgress } from '../../shared/types'
+import type { AppSettings, Dependencies, MountConfig, MountView, RemoteListing, Snapshot, Theme, BackupSchedule, BackupProgress, OperationView, OperationReply } from '../../shared/types'
 import { normalizeRemotePath, selectedRemote } from '../../shared/paths'
 import { displayRemotePath, parseDisplayedRemotePath } from './remote-path-display'
 import { nextScheduledAt, scheduleOf } from '../../shared/schedule'
@@ -116,6 +116,31 @@ function Dialog({title, subtitle, children, onClose, busy = false}: {title: stri
   </div>
 }
 
+function OperationDialog({operation, onReply}: {operation: OperationView; onReply: (reply: OperationReply) => void | Promise<unknown>}): ReactNode {
+  const working = operation.phase === 'working', checking = operation.phase === 'checking', blocked = operation.phase === 'blocked'
+  const action = {quit:'Esci da Drive Tambu',disconnect:'Scollega cartella',remove:'Rimuovi collegamento',move:'Conferma cambio'}[operation.kind]
+  const heading = {quit:'Vuoi uscire da Drive Tambu?',disconnect:`Scollegare ${operation.name ?? 'la cartella'}?`,remove:`Rimuovere ${operation.name ?? 'il collegamento'}?`,move:'Cambiare posizione alla cartella?'}[operation.kind]
+  return <Dialog title={working ? 'Un momento...' : checking ? 'Controllo dei trasferimenti' : blocked ? 'Operazione in attesa' : heading}
+    subtitle={operation.name} busy={working} onClose={() => {void onReply('cancel')}}>
+    <div className="modal-body operation-body">
+      <div className={`operation-symbol ${blocked ? 'operation-blocked' : ''}`}>{working || checking ? <LoaderCircle className="spin" size={30}/> : <CircleAlert size={30}/>}</div>
+      <p role="status" aria-live="polite">{operation.message}</p>
+      {operation.phase === 'confirm' && <>
+        {operation.kind === 'move' && <dl className="operation-paths"><dt>Posizione attuale</dt><dd>{operation.from}</dd><dt>Nuova posizione</dt><dd>{operation.to}</dd></dl>}
+        {(operation.kind === 'remove' || operation.kind === 'move') && <p>Questa operazione non cancella i file sul server o i backup locali.</p>}
+        <div className="operation-caution">Prima di continuare, salva e chiudi i documenti aperti nelle cartelle coinvolte: alcuni salvataggi potrebbero non essere ancora rilevati dall'app.</div>
+      </>}
+      {blocked && <p className="field-hint">L'operazione non e stata completata. Puoi riprovare, oppure nascondere la finestra e lasciare lavorare Drive Tambu.</p>}
+    </div>
+    <footer className="modal-foot operation-actions">
+      <Button disabled={working} onClick={() => onReply('cancel')}>{blocked ? "Torna all'app" : 'Annulla'}</Button>
+      {blocked && <Button onClick={() => onReply('retry')}><RefreshCw size={15}/> Riprova</Button>}
+      {blocked && <Button kind="primary" className="background-action" onClick={() => onReply('background')}>Continua in background</Button>}
+      {operation.phase === 'confirm' && <Button kind="primary" onClick={() => onReply('confirm')}>{action}</Button>}
+    </footer>
+  </Dialog>
+}
+
 function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string; initialPath: string; onChoose: (path: string) => void; onClose: () => void}): ReactNode {
   const [listing, setListing] = useState<RemoteListing | null>(null)
   const [input, setInput] = useState(() => displayRemotePath(initialPath))
@@ -184,13 +209,13 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [browser, setBrowser] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [shortcutResult, setShortcutResult] = useState('')
   const isNew = !original.name
   const schedule = m.backup.schedule ?? (m.backup.intervalMinutes === 0 ? {mode:'manual' as const} : {mode:'interval' as const,minutes:m.backup.intervalMinutes})
   const sameSchedule = !isNew && original.backup.enabled && m.backup.enabled && JSON.stringify(schedule) === JSON.stringify(scheduleOf(original.backup))
   const status = (original as Partial<MountView>).status
   const pathLocked = status === 'connected' || status === 'connecting' || status === 'disconnecting'
+  const localLocked = saving || status === 'connecting' || status === 'disconnecting'
   const patch = <K extends keyof MountConfig>(key: K, value: MountConfig[K]): void => {setM(prev => ({...prev, [key]: value})); setError('')}
   const backup = <K extends keyof MountConfig['backup']>(key: K, value: MountConfig['backup'][K]): void => setM(prev => ({...prev, backup: {...prev.backup, [key]: value}}))
   useEffect(() => { if (!m.remote && remotes.length === 1 && isNew) setM(prev => ({...prev, remote: remotes[0]})) }, [remotes, m.remote, isNew])
@@ -210,16 +235,14 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
   }
   return <>
     <Dialog title={isNew ? 'Nuova cartella' : 'Impostazioni cartella'} subtitle="Scegli cosa collegare e dove ritrovarlo." onClose={onClose} busy={saving}>
-      {confirmDelete ? <div className="modal-body"><div className="confirmation"><Trash2 size={28}/><h3>Rimuovere {m.name}?</h3><p>Rimuovi soltanto il collegamento dall'app. I file sul server e i backup locali non saranno cancellati.</p></div><ErrorBox message={error}/><div className="modal-foot"><Button onClick={() => setConfirmDelete(false)} disabled={saving}>Annulla</Button><Button kind="danger" disabled={saving} onClick={async () => {
-        setSaving(true); try { await onDelete(m.id) } catch (failure) {setError(messageOf(failure))} finally {setSaving(false)}
-      }}>Rimuovi collegamento</Button></div></div> : <form onSubmit={event => void save(event)}>
+      <form onSubmit={event => void save(event)}>
         <div className="modal-body">
           <ErrorBox message={error}/>
           {remotes.length === 0 && <div className="info-box"><Server size={19}/><div><strong>Nessun server disponibile</strong><p>Apri le Impostazioni per rilevare le connessioni salvate.</p><Button onClick={onSettings}>Apri Impostazioni</Button></div></div>}
           <Field label="Nome cartella"><input required aria-label="Nome cartella" maxLength={80} placeholder="Per esempio, Documenti" value={m.name} disabled={saving} onChange={event => patch('name', event.target.value)}/></Field>
           {remotes.length > 1 ? <Field label="Server"><select required aria-label="Server" value={m.remote} disabled={saving || pathLocked} onChange={event => {patch('remote', event.target.value); patch('remotePath', '')}}><option value="" disabled>Scegli il server</option>{remotes.map(remote => <option key={remote} value={remote}>{serverName(remote)}</option>)}</select></Field>
             : m.remote && <div className="server-chip"><Server size={15}/><span>Server: <strong>{serverName(m.remote)}</strong></span></div>}
-          {pathLocked && <p className="field-hint">Per cambiare le posizioni, scollega prima la cartella. Puoi comunque cambiarne il nome.</p>}
+          {pathLocked && <p className="field-hint">Puoi cambiare la posizione sul computer: al salvataggio ti verra chiesta conferma. Per cambiare il percorso sul server, scollega prima la cartella.</p>}
           <Field label="Cartella sul server" detail="Usa Sfoglia oppure incolla il percorso completo. Il nome del server viene riconosciuto automaticamente.">
             <div className="input-with-button"><input aria-label="Cartella sul server" disabled={saving || pathLocked} spellCheck={false} value={m.remotePath} placeholder="Home del server" onChange={event => patch('remotePath', event.target.value)} onBlur={() => {
               if (!m.remote) return
@@ -227,7 +250,7 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
             }}/><button type="button" aria-label="Sfoglia cartelle sul server" disabled={!m.remote || saving || pathLocked} onClick={() => setBrowser(true)}><Folder size={16}/> Sfoglia</button></div>
           </Field>
           <Field label="Cartella sul computer" detail="Scegli dove farla apparire. Drive Tambu prepara un nome disponibile, senza toccare le cartelle esistenti.">
-            <div className="input-with-button"><input required aria-label="Cartella sul computer" disabled={saving || pathLocked} value={m.localPath} placeholder="Scegli una posizione" onChange={event => patch('localPath', event.target.value)}/><button type="button" aria-label="Sfoglia cartelle sul computer" disabled={saving || pathLocked} onClick={() => void chooseLocal()}><Folder size={16}/> Sfoglia</button></div>
+            <div className="input-with-button"><input required aria-label="Cartella sul computer" disabled={localLocked} value={m.localPath} placeholder="Scegli una posizione" onChange={event => patch('localPath', event.target.value)}/><button type="button" aria-label="Sfoglia cartelle sul computer" disabled={localLocked} onClick={() => void chooseLocal()}><Folder size={16}/> {isNew ? 'Sfoglia' : 'Cambia posizione...'}</button></div>
           </Field>
           <div className="setting-switch"><div><strong>Collega automaticamente</strong><p>La cartella torna disponibile quando apri Drive Tambu.</p></div><Toggle label="Collega automaticamente" checked={m.autoConnect} disabled={saving} onChange={value => patch('autoConnect', value)}/></div>
           <div className="refresh-preferences"><h3>Aggiornamento elenco file</h3>
@@ -246,8 +269,8 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
             <p className="field-hint">Il backup copia dal server al computer, mai al contrario. Funziona mentre Drive Tambu e aperto.</p>
           </fieldset>}
         </div>
-        <footer className="modal-foot"><div className="foot-spacer">{!isNew && <Button kind="ghost" disabled={saving} onClick={() => setConfirmDelete(true)}><Trash2 size={16}/><span className="hide-narrow">Rimuovi</span></Button>}</div><Button onClick={onClose} disabled={saving}>Annulla</Button><button type="submit" className="button button-primary" disabled={saving || !m.remote || remotes.length === 0}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} {saving ? 'Verifico e salvo...' : 'Salva cartella'}</button></footer>
-      </form>}
+        <footer className="modal-foot"><div className="foot-spacer">{!isNew && <Button kind="ghost" disabled={saving} onClick={async () => {setSaving(true); setError(''); try {await onDelete(m.id)} catch (failure) {setError(messageOf(failure))} finally {setSaving(false)}}}><Trash2 size={16}/><span className="hide-narrow">Rimuovi</span></Button>}</div><Button onClick={onClose} disabled={saving}>Annulla</Button><button type="submit" className="button button-primary" disabled={saving || !m.remote || remotes.length === 0}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} {saving ? 'Verifico e salvo...' : 'Salva cartella'}</button></footer>
+      </form>
     </Dialog>
     {browser && <RemoteBrowser remote={m.remote} initialPath={m.remotePath} onClose={() => setBrowser(false)} onChoose={value => {patch('remotePath', value); setBrowser(false)}}/>}
   </>
@@ -255,6 +278,7 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
 
 function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: {m: MountView; busy: boolean; onEdit: () => void; onOpen: () => void; onToggle: () => void; onBackup: () => void; onOpenBackup: () => void}): ReactNode {
   const connected = m.status === 'connected', connecting = m.status === 'connecting', stopping = m.status === 'disconnecting'
+  const disconnectable = connected || !!m.hasRuntime
   const label = {connected: 'Collegata', connecting: 'Collegamento...', disconnected: 'Scollegata', disconnecting: 'Disconnessione...', error: 'Da verificare'}[m.status]
   return <article className="mount-card">
     <div className="mount-top"><span className="folder-icon"><Folder size={25}/></span><div className="mount-heading"><h3>{m.name}</h3><span className={`status status-${m.status}`}><i/>{label}</span></div><Button title={`Impostazioni ${m.name}`} kind="ghost" onClick={onEdit}><MoreHorizontal size={20}/></Button></div>
@@ -264,7 +288,7 @@ function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: 
     {m.backupStatus === 'error' && <ErrorBox message="Il backup non e stato completato. Apri Attivita per i dettagli."/>}
     <div className="mount-bottom"><div className="backup-caption"><DatabaseBackup size={14}/><span>{m.backupStatus === 'running' ? `Backup in corso${m.backupProgress?.percent != null ? ` - ${m.backupProgress.percent}% (stima)` : ''}` : m.backup.enabled ? `Ultima copia: ${dateLabel(m.lastBackupAt)}` : 'Backup non attivo'}</span></div><div className="mount-actions">
       {connected && <Button onClick={onOpen}><FolderOpen size={15}/> Apri</Button>}
-      <Button kind={connected || connecting ? 'secondary' : 'primary'} disabled={stopping || (busy && !connecting)} onClick={onToggle}>{connecting ? <X size={15}/> : connected ? <Unplug size={15}/> : <ArrowUpRight size={15}/>} {connecting ? 'Annulla' : stopping ? 'Attendi...' : connected ? 'Scollega' : m.status === 'error' ? 'Riprova' : 'Collega'}</Button>
+      <Button kind={disconnectable || connecting ? 'secondary' : 'primary'} disabled={stopping || (busy && !connecting)} onClick={onToggle}>{connecting ? <X size={15}/> : disconnectable ? <Unplug size={15}/> : <ArrowUpRight size={15}/>} {connecting ? 'Annulla' : stopping ? 'Attendi...' : disconnectable ? 'Scollega' : m.status === 'error' ? 'Riprova' : 'Collega'}</Button>
     </div></div>
     {m.backupStatus === 'running' && <BackupProgressView progress={m.backupProgress}/>}
     {m.backup.enabled && m.nextBackupAt && m.backupStatus !== 'running' && <p className="next-backup"><Clock3 size={13}/> Prossimo: {dateLabel(m.nextBackupAt)}</p>}
@@ -361,7 +385,7 @@ export default function App(): ReactNode {
     catch (error) {notify(messageOf(error), 'error')}
     finally {setBusy(value => {const next = new Set(value); next.delete(key); return next})}
   }
-  const saveMount = async (m: MountConfig): Promise<void> => {await window.drive.saveMount(m); await refresh(); setEditing(null); notify('Cartella salvata.')}
+  const saveMount = async (m: MountConfig): Promise<void> => {const saved = await window.drive.saveMount(m); if (saved === false) return; await refresh(); setEditing(null); notify('Cartella salvata.')}
   const deleteMount = async (id: string): Promise<boolean> => {
     await window.drive.deleteMount(id)
     const next = await window.drive.snapshot(); setSnapshot(next)
@@ -382,7 +406,7 @@ export default function App(): ReactNode {
         {page === 'folders' && <div className="page-block"><div className="page-heading hero"><div><span className="eyebrow">SEMPLICE. VELOCE.</span><h1>Il tuo server, a portata di mano<span>.</span></h1></div><Button kind="primary" disabled={loadingDeps} onClick={addFolder}><Plus size={17}/><span>Nuova cartella</span></Button></div>
           <div className="overview"><div><Folder size={18}/><strong>{snapshot.mounts.length}</strong><span>Cartelle</span></div><div><CircleCheck size={18}/><strong>{connected}</strong><span>Collegate</span></div><div><DatabaseBackup size={18}/><strong>{snapshot.mounts.filter(m => m.backup.enabled).length}</strong><span>Backup attivi</span></div></div>
           <div className="library-toolbar"><p>{snapshot.mounts.length ? `${connected} di ${snapshot.mounts.length} collegate` : 'Un posto per tutto quello che conta.'}</p>{snapshot.mounts.length > 0 && <div className="search-field"><Search size={16}/><input aria-label="Cerca cartelle" placeholder="Cerca" value={search} onChange={event => setSearch(event.target.value)}/></div>}</div>
-          {snapshot.mounts.length === 0 ? <div className="empty-state"><span className="empty-folder"><FolderOpen size={46}/></span><h2>Il tuo spazio inizia qui.</h2><p>Scegli una cartella sul server e ritrovala sul computer, senza scaricare tutto l'archivio.</p><Button kind="primary" disabled={loadingDeps} onClick={addFolder}>{loadingDeps ? <LoaderCircle size={17} className="spin"/> : <Plus size={17}/>} {loadingDeps ? 'Rilevo il server...' : 'Aggiungi la prima cartella'}</Button></div> : <div className="mount-list">{visible.map(m => <MountCard key={m.id} m={m} busy={busy.has(m.id)} onEdit={() => setEditing(m)} onOpen={() => void task('open', () => window.drive.openMount(m.id))} onToggle={() => void task(m.id, () => m.status === 'connected' || m.status === 'connecting' ? window.drive.disconnect(m.id) : window.drive.connect(m.id))} onBackup={() => void task(m.id, () => window.drive.backupNow(m.id), 'Backup completato.')} onOpenBackup={() => void task('open-backup', () => window.drive.openBackup(m.id))}/>)}{visible.length === 0 && <div className="empty-list">Nessuna cartella corrisponde alla ricerca.</div>}</div>}
+          {snapshot.mounts.length === 0 ? <div className="empty-state"><span className="empty-folder"><FolderOpen size={46}/></span><h2>Il tuo spazio inizia qui.</h2><p>Scegli una cartella sul server e ritrovala sul computer, senza scaricare tutto l'archivio.</p><Button kind="primary" disabled={loadingDeps} onClick={addFolder}>{loadingDeps ? <LoaderCircle size={17} className="spin"/> : <Plus size={17}/>} {loadingDeps ? 'Rilevo il server...' : 'Aggiungi la prima cartella'}</Button></div> : <div className="mount-list">{visible.map(m => <MountCard key={m.id} m={m} busy={busy.has(m.id)} onEdit={() => setEditing(m)} onOpen={() => void task('open', () => window.drive.openMount(m.id))} onToggle={() => void task(m.id, () => m.hasRuntime || m.status === 'connected' || m.status === 'connecting' ? window.drive.disconnect(m.id) : window.drive.connect(m.id))} onBackup={() => void task(m.id, () => window.drive.backupNow(m.id), 'Backup completato.')} onOpenBackup={() => void task('open-backup', () => window.drive.openBackup(m.id))}/>)}{visible.length === 0 && <div className="empty-list">Nessuna cartella corrisponde alla ricerca.</div>}</div>}
           <div className="privacy-note"><HardDrive size={15}/><span>I file restano sul server. Quelli aperti possono occupare spazio temporaneo sul computer.</span></div>
         </div>}
         {page === 'settings' && <SettingsPage snapshot={snapshot} deps={deps} busy={busy.has('settings')} onCheck={() => void refreshDependencies()} onSave={async values => {
@@ -395,6 +419,7 @@ export default function App(): ReactNode {
       <nav className="compact-nav" aria-label="Navigazione pannello"><button className={page === 'folders' ? 'selected' : ''} onClick={() => setPage('folders')}><Folder size={18}/><span>Cartelle</span></button><button className={page === 'activity' ? 'selected' : ''} onClick={() => setPage('activity')}><Activity size={18}/><span>Attivit&agrave;</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings2 size={18}/><span>Impostazioni</span></button></nav>
     </div>
     {editing && <MountModal defaultRefreshSeconds={snapshot.settings.directoryRefreshSeconds} original={editing} remotes={deps?.remotes ?? []} platform={snapshot.platform} onClose={() => setEditing(null)} onSave={saveMount} onDelete={deleteMount} onSettings={() => {setEditing(null); setPage('settings')}}/>}
+    {snapshot.operation && <OperationDialog operation={snapshot.operation} onReply={reply => window.drive.respondToOperation(snapshot.operation!.id, reply).catch(error => notify(messageOf(error), 'error'))}/>}
     {notice && <div className={`toast toast-${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <CircleAlert size={18}/> : <CircleCheck size={18}/>}<span>{notice.text}</span><button aria-label="Chiudi notifica" onClick={() => setNotice(null)}><X size={16}/></button></div>}
   </div>
 }

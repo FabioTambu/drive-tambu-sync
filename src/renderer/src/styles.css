@@ -330,3 +330,14 @@ svg { flex-shrink: 0; vertical-align: middle; }
 .next-backup { font-size: 11px; color: var(--muted); margin-top: 10px; }
 .refresh-notice { font-size: 11px; color: var(--amber); background: var(--amber-soft); padding: 10px; border-radius: 9px; margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .progress-track > span { transition: none; } }
+
+/* Guarded actions: observations, not a safety certificate. */
+.operation-body { display: grid; gap: 16px; font-size: 12px; }
+.operation-symbol { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 18px; color: var(--amber); background: var(--amber-soft); }
+.operation-caution { padding: 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: var(--surface-soft); line-height: 1.7; }
+.operation-paths { margin: 0; padding: 14px; background: var(--surface-soft); border-radius: 12px; min-width: 0; }
+.operation-paths dt { color: var(--muted); font-size: 10px; }
+.operation-paths dd { margin: 3px 0 12px; overflow-wrap: anywhere; font-size: 12px; }
+.operation-paths dd:last-child { margin-bottom: 0; }
+.operation-actions { flex-wrap: wrap; }
+@media (max-width: 520px) { .operation-actions .background-action { width: 100%; } }

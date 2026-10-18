@@ -4,7 +4,7 @@ const fss=require('node:fs')
 const path=require('node:path')
 const crypto=require('node:crypto')
 const {spawn}=require('node:child_process')
-const {isolatedEnv,mountRequest,rpc,freePort,waitFor,sleep,sha256,WriterClient}=require('./support.cjs')
+const {isolatedEnv,freePort,waitFor,sha256}=require('./support.cjs')
 
 function sshString(b){const prefix=Buffer.alloc(4);prefix.writeUInt32BE(b.length);return Buffer.concat([prefix,b])}
 function sshPositive(b){return sshString(b[0]&0x80?Buffer.concat([Buffer.from([0]),b]):b)}
@@ -92,39 +92,10 @@ class StorageFixture {
     },20000,'Local SFTP marker readiness')
   }
   async stopServer(){if(this.server)await this.server.stopForCleanup();this.server=null}
-  async startDaemon(){
-    this.daemon=this.launch(['rcd','--rc-addr',`127.0.0.1:${this.rcPort}`,'--cache-dir',this.cache,'--log-level','NOTICE',
-      '--sftp-disable-hashcheck','--sftp-shell-type','none','--contimeout','2s','--timeout','5s','--retries','1','--low-level-retries','1'],{RCLONE_RC_USER:'probe',RCLONE_RC_PASS:this.rcSecret})
-    await waitFor(async()=>{this.daemon.assertAlive();return this.call('core/version',{},1000)},20000,'Local rclone RC readiness')
-  }
-  call(method,params={},timeout=15000){return rpc(this.rcPort,this.rcSecret,method,params,timeout)}
-  async mount(writeBackSeconds){
-    if(process.platform==='linux')await fs.mkdir(this.mountPoint,{recursive:true})
-    const types=await this.call('mount/types')
-    const type=process.platform==='win32'?'cmount':'mount'
-    if(!Array.isArray(types.mountTypes)||!types.mountTypes.includes(type))throw new Error(`Required mount implementation ${type} unavailable`)
-    // initialize() prepared the marker before starting the SFTP server, and
-    // startServer() verified its contents through SFTP. Do not rewrite it here.
-    await this.call('mount/mount',mountRequest(this.mountPoint,writeBackSeconds,type),45000)
-    this.mounted=true
-    // The marker must be readable through the remote, not only an existing host directory.
-    await waitFor(async()=>{this.daemon.assertAlive();return await fs.readFile(path.join(this.mountPoint,'fixture-ready.txt'),'utf8')==='probe-ready'},15000,'Mount marker')
-    this.writer=new WriterClient(this.mountPoint)
-  }
-  async stats(){return this.call('vfs/stats')}
   async remoteHash(name){try{return sha256(await fs.readFile(path.join(this.remote,name)))}catch(e){if(e.code==='ENOENT')return null;throw e}}
   async waitHash(name,expected){return waitFor(async()=>await this.remoteHash(name)===expected,60000,'SFTP content hash')}
-  async unmount(){await this.call('mount/unmount',{mountPoint:this.mountPoint},15000);this.mounted=false}
-  async quitDaemon(){
-    if(!this.daemon)return
-    try{await this.call('core/quit',{},3000)}catch(e){if(!/ECONNRESET|socket hang up/.test(e.message))throw e}
-    const exit=await this.daemon.wait(10000)
-    if(exit.code!==0)throw new Error('rclone test daemon did not quit cleanly')
-    this.daemon=null
-  }
   async dispose(){
     if(this.writer){await this.writer.dispose();this.writer=null}
-    if(this.daemon){try{await this.unmount()}catch{};try{await this.quitDaemon()}catch{}}
     for(const child of this.children.reverse())await child.stopForCleanup()
     // Do not recursively delete a mount tree, even in tests. The ephemeral VM disposes
     // of this scratch directory. Only sanitized JSON reports are uploaded.

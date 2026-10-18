@@ -71,3 +71,17 @@ test('overdue calendar backup is recovered once and its next date survives resta
  await manager.checkSchedule();assert.equal(syncs.length,1)
  assert.equal(new ConfigStore().find(m.id).nextBackupAt,next);manager.stop()
 })
+test('operation pause blocks new backups and scheduling, then resume allows a run',async()=>{
+ const {manager,m}=fixture();manager.pauseScheduling()
+ await assert.rejects(manager.run(m.id),/operazione/i)
+ await manager.checkSchedule();assert.equal(syncs.length,0)
+ manager.resumeScheduling();const p=manager.run(m.id);await waitForSync();finish();await p;manager.stop()
+})
+test('operation pause preserves a running backup and stop refuses to interrupt it',async()=>{
+ const {manager,m}=fixture();const p=manager.run(m.id);await waitForSync()
+ try{
+  manager.pauseScheduling();assert.equal(manager.state(m.id).status,'running')
+  assert.throws(()=>manager.stop(),/completamento/i)
+  assert.equal(syncs[0].child.exitCode,null)
+ }finally{finish();await p;manager.resumeScheduling();manager.stop()}
+})

@@ -2,7 +2,6 @@
 const path = require('node:path')
 const crypto = require('node:crypto')
 const {fork} = require('node:child_process')
-const http = require('node:http')
 const net = require('node:net')
 
 function assertHostedRunner(env = process.env) {
@@ -14,24 +13,6 @@ function isolatedEnv(base, home) {
   const env = Object.fromEntries(Object.entries(base).filter(([key]) => !/^RCLONE_/i.test(key) && !/^SSH_AUTH_SOCK$/i.test(key)))
   return {...env, HOME:home, USERPROFILE:home, APPDATA:path.join(home,'appdata'), LOCALAPPDATA:path.join(home,'localappdata'),
     XDG_CONFIG_HOME:path.join(home,'config'), XDG_CACHE_HOME:path.join(home,'cache'), XDG_STATE_HOME:path.join(home,'state')}
-}
-function mountRequest(mountPoint, writeBackSeconds, mountType) {
-  if (!path.isAbsolute(mountPoint) || !Number.isSafeInteger(writeBackSeconds) || writeBackSeconds < 0 || writeBackSeconds > 3600 || !['mount','cmount','mount2'].includes(mountType)) {
-    throw new Error('Invalid test mount parameters')
-  }
-  return {fs:'probe:/',mountPoint,mountType,vfsOpt:{CacheMode:3,WriteBack:writeBackSeconds * 1e9,PollInterval:0,CacheMaxAge:1200e9,CachePollInterval:1e9},mountOpt:{AttrTimeout:0}}
-}
-function summarizeStats(input) {
-  const d=input?.diskCache
-  if (!d || !['uploadsQueued','uploadsInProgress','erroredFiles'].every(k=>Number.isSafeInteger(d[k])&&d[k]>=0) || typeof d.outOfSpace!=='boolean') return {kind:'unknown'}
-  return {kind:'known',queued:d.uploadsQueued,uploading:d.uploadsInProgress,errored:d.erroredFiles,outOfSpace:d.outOfSpace,openWriters:'not-observed'}
-}
-function reportFor(platform) {
-  return {format:1,purpose:'stock-rclone-characterization',productionSafetyCertified:false,platform,node:process.version,
-    startedAt:new Date().toISOString(),status:'not-started',scenarios:[],limits:[
-      'Not an implementation of a write barrier or an approval to terminate production mounts.',
-      'Only synthetic closed-file recovery and open-handle behavior; not sparse-file recovery, conflicting edits, crash durability or uninstall safety.'
-    ]}
 }
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
 const sleep = ms => new Promise(r=>setTimeout(r,ms))
@@ -48,25 +29,6 @@ function freePort() {
   return new Promise((resolve,reject)=>{
     const server=net.createServer(); server.on('error',reject)
     server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(err=>err?reject(err):resolve(port))})
-  })
-}
-function rpc(port, secret, method, parameters={}, timeoutMs=15000) {
-  if (!Number.isInteger(port)||port<1||port>65535||!/^[a-z]+\/[a-z-]+$/.test(method)) return Promise.reject(new Error('Invalid local RC request'))
-  const body=JSON.stringify(parameters)
-  return new Promise((resolve,reject)=>{
-    const req=http.request({hostname:'127.0.0.1',port,path:'/'+method,method:'POST',agent:false,
-      headers:{Authorization:'Basic '+Buffer.from('probe:'+secret).toString('base64'),'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}},res=>{
-      let text='',size=0
-      res.setEncoding('utf8')
-      res.on('data',d=>{size+=Buffer.byteLength(d);if(size>1024*1024)req.destroy(new Error('RC response too large'));else text+=d})
-      res.on('error',reject)
-      res.on('end',()=>{
-        if (res.statusCode!==200) {reject(new Error(`RC ${method}: HTTP ${res.statusCode}: ${text.slice(0,500)}`));return}
-        try {resolve(JSON.parse(text))} catch {reject(new Error(`RC ${method}: invalid JSON`))}
-      })
-    })
-    const timer=setTimeout(()=>req.destroy(new Error(`RC ${method}: timeout`)),timeoutMs)
-    req.on('close',()=>clearTimeout(timer));req.on('error',reject);req.end(body)
   })
 }
 class WriterClient {
@@ -100,4 +62,19 @@ class WriterClient {
     if(this.child.exitCode===null&&this.child.signalCode===null){this.child.kill();await sleep(100)}
   }
 }
-module.exports={assertHostedRunner,isolatedEnv,mountRequest,summarizeStats,reportFor,sha256,WriterClient,waitFor,sleep,freePort,rpc}
+module.exports={assertHostedRunner,isolatedEnv,sha256,WriterClient,waitFor,sleep,freePort}
+
+// The coordinator intentionally leaves a blocked action pending for its UI.
+// The headless regression must cancel/report that state, not wait for human input.
+async function confirmAndWait(coordinator,pending) {
+  const view=coordinator.view
+  if(!view || view.phase!=='confirm')throw new Error('Expected a confirmation before the native operation')
+  await coordinator.respond(view.id,'confirm')
+  const remaining=coordinator.view
+  if(remaining) {
+    await coordinator.respond(remaining.id,'cancel')
+    throw new Error(remaining.message || 'Native operation remained blocked')
+  }
+  return pending
+}
+module.exports.confirmAndWait=confirmAndWait

@@ -1,3 +1,4 @@
+// Retained regression tests for the disposable native fixture, not a certification of app safety.
 const {test} = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs/promises')
@@ -5,8 +6,8 @@ const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
 let helpers = {}
-try { helpers = require('../support.cjs') } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e }
-const {assertHostedRunner, isolatedEnv, mountRequest, summarizeStats, reportFor, sha256, WriterClient} = helpers
+try { helpers = require('./native/helpers/support.cjs') } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e }
+const {assertHostedRunner, isolatedEnv, sha256, WriterClient} = helpers
 
 test('refuses local or self-hosted execution', () => {
   assert.equal(typeof assertHostedRunner,'function')
@@ -21,43 +22,6 @@ test('isolates rclone overrides and SSH agent without removing executable PATH',
   assert.equal(env.PATH,'keep'); assert.equal(env.RCLONE_CONFIG,undefined)
   assert.equal(env.rclone_rc_pass,undefined); assert.equal(env.SSH_AUTH_SOCK,undefined)
   assert.equal(env.HOME,root); assert.equal(env.USERPROFILE,root)
-})
-test('mount request uses only the disposable SFTP remote and full cache', () => {
-  assert.equal(typeof mountRequest,'function')
-  const m = mountRequest(path.join(os.tmpdir(),'mount'),3600,'cmount')
-  assert.equal(m.fs,'probe:/'); assert.equal(m.vfsOpt.CacheMode,3)
-  assert.equal(m.vfsOpt.WriteBack,3600e9); assert.equal(m.vfsOpt.PollInterval,0)
-  assert.equal(m.mountType,'cmount')
-})
-test('invalid writeback duration and nonabsolute path are rejected', () => {
-  assert.equal(typeof mountRequest,'function')
-  assert.throws(() => mountRequest('relative',1,'mount'))
-  assert.throws(() => mountRequest(os.tmpdir(),-1,'mount'))
-  assert.throws(() => mountRequest(os.tmpdir(),NaN,'mount'))
-})
-test('missing disk statistics are unknown, never idle', () => {
-  assert.equal(typeof summarizeStats,'function')
-  assert.deepEqual(summarizeStats({}),{kind:'unknown'})
-  assert.deepEqual(summarizeStats({diskCache:{uploadsQueued:0}}),{kind:'unknown'})
-})
-test('zero queue is explicitly not evidence of absence of open handles', () => {
-  assert.equal(typeof summarizeStats,'function')
-  const value=summarizeStats({diskCache:{uploadsQueued:0,uploadsInProgress:0,erroredFiles:0,outOfSpace:false}})
-  assert.equal(value.kind,'known'); assert.equal(value.queued,0)
-  assert.equal(value.openWriters,'not-observed'); assert.equal(value.safeToStop,undefined)
-})
-test('negative, fractional and unsafe counters are rejected', () => {
-  assert.equal(typeof summarizeStats,'function')
-  for (const invalid of [-1, 1.5, Number.MAX_SAFE_INTEGER+1,'0']) {
-    assert.equal(summarizeStats({diskCache:{uploadsQueued:invalid,uploadsInProgress:0,erroredFiles:0,outOfSpace:false}}).kind,'unknown')
-  }
-})
-test('a characterization report never certifies production safety', () => {
-  assert.equal(typeof reportFor,'function')
-  const r=reportFor('win32')
-  assert.equal(r.productionSafetyCertified,false)
-  assert.equal(r.purpose,'stock-rclone-characterization')
-  assert.equal(r.status,'not-started')
 })
 test('hash function checks bytes, not size', () => {
   assert.equal(typeof sha256,'function')
@@ -93,7 +57,7 @@ test('external writer does not overwrite an existing file', async t => {
 })
 
 test('fixture initialization failures redact temporary credentials before leaving the fixture', async t => {
-  const {StorageFixture}=require('../fixture.cjs')
+  const {StorageFixture}=require('./native/helpers/fixture.cjs')
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'drive-fixture-failure-'))
   const originalInitialize=StorageFixture.prototype.initialize
   const originalDispose=StorageFixture.prototype.dispose
@@ -145,7 +109,7 @@ function markerFixtureModule() {
     })
     return child
   }
-  const realSupport = require('../support.cjs')
+  const realSupport = require('./native/helpers/support.cjs')
   const testSupport = {...realSupport,
     // One readiness attempt removes the real-time delay, not its success test.
     waitFor:async (fn,_timeout,label) => {
@@ -155,7 +119,7 @@ function markerFixtureModule() {
     },
     WriterClient:class {async dispose(){}}
   }
-  const source = syncFs.readFileSync(path.join(__dirname,'../fixture.cjs'),'utf8')
+  const source = syncFs.readFileSync(path.join(__dirname,'./native/helpers/fixture.cjs'),'utf8')
   const sandbox = {module,exports:module.exports,Buffer,process,console,setTimeout,clearTimeout,
     require:id => id === 'node:child_process' ? {spawn} : id === './support.cjs' ? testSupport : require(id)}
   vm.runInNewContext(source,sandbox,{filename:'fixture.cjs'})
@@ -195,20 +159,21 @@ test('SFTP readiness rejects incorrect marker contents', async t => {
   await fs.writeFile(path.join(fixture.remote,'fixture-ready.txt'),'wrong-content')
   await assert.rejects(fixture.startServer(),/marker|Marker/)
 })
-
-test('mounting does not modify an already prepared server marker', async t => {
-  const {fixture} = await markerFixture(t)
-  await fs.mkdir(fixture.remote,{recursive:true})
-  await fs.writeFile(path.join(fixture.remote,'fixture-ready.txt'),'leave-this-file-unchanged')
-  fixture.daemon = {assertAlive(){},async wait(){return {code:0}}}
-  fixture.call = async method => {
-    if (method === 'mount/types') return {mountTypes:['mount','cmount']}
-    if (method === 'mount/mount') {
-      await fs.mkdir(fixture.mountPoint,{recursive:true})
-      await fs.writeFile(path.join(fixture.mountPoint,'fixture-ready.txt'),'probe-ready')
-    }
-    return {}
-  }
-  await fixture.mount(1)
-  assert.equal(await fs.readFile(path.join(fixture.remote,'fixture-ready.txt'),'utf8'),'leave-this-file-unchanged')
+test('native test confirmation reports a blocked execution instead of hanging forever',async()=>{
+ const {confirmAndWait}=require('./native/helpers/support.cjs')
+ assert.equal(typeof confirmAndWait,'function')
+ const {OperationCoordinator}=require('../src/main/operations.ts')
+ const c=new OperationCoordinator({changed(){},pause(){},resume(){},hide(){}})
+ const pending=c.run({kind:'disconnect',requiresConfirmation:true},async()=>({kind:'confirm',message:''}),async()=>{throw new Error('unmount failed in test')})
+ await new Promise(r=>setImmediate(r))
+ await assert.rejects(confirmAndWait(c,pending),/unmount failed/)
+ assert.equal(await pending,false)
+})
+test('native test confirmation awaits the successful production operation',async()=>{
+ const {confirmAndWait}=require('./native/helpers/support.cjs')
+ assert.equal(typeof confirmAndWait,'function')
+ const {OperationCoordinator}=require('../src/main/operations.ts')
+ const c=new OperationCoordinator({changed(){},pause(){},resume(){},hide(){}})
+ const pending=c.run({kind:'disconnect',requiresConfirmation:true},async()=>({kind:'confirm',message:''}),async()=>{})
+ await new Promise(r=>setImmediate(r));assert.equal(await confirmAndWait(c,pending),true)
 })

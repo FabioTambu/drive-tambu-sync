@@ -1,3 +1,5 @@
+> Aggiornamento 0.4.0: controlli prima di uscita/disconnessione, cambio posizione e reset facoltativo delle preferenze. Vedi [istruzioni](AGGIORNAMENTO-0.4.md) e [verifiche e limiti](docs/VERIFICA-0.4.md). Nessun fork di rclone.
+
 # Drive Tambu 2.0 - aggiornamento 0.2.0
 
 Drive Tambu e un'app desktop multipiattaforma (Windows + Linux) per rendere accessibili sul computer cartelle che restano sul server Ubuntu, usando rclone. Interfaccia in React + TypeScript, processo desktop in Electron, backup in una cartella locale separata.

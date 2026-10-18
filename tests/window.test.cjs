@@ -31,7 +31,7 @@ const original = Module._load
 Module._load = function(id, ...args) {
   if (id === 'electron') return electron
   if (id === './backups') return {BackupManager: class { startScheduler() {} state() { return {status: 'running', detail: 'Copia...', progress:{phase:'copying',percent:42,bytes:42,totalBytes:100,speed:1,checks:1,transfers:0}} } stop() {} }}
-  if (id === './mounts') return {MountManager: class { state() { return {status: 'connected', detail: ''} } needsRefreshReconnect(){return true} async connect(){} async disconnectAll() {} }}
+  if (id === './mounts') return {MountManager: class { hasRuntime(){return true} state() { return {status: 'connected', detail: ''} } needsRefreshReconnect(){return true} async connect(){} async disconnectAll() {} }}
   return original.call(this, id, ...args)
 }
 require('../src/main/index.ts')
