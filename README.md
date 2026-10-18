@@ -1,3 +1,5 @@
+> Patch 0.4.1: collegamenti con apertura silenziosa del pannello e argomenti corretti. Vedi [istruzioni](AGGIORNAMENTO-0.4.1.md) e [verifiche](docs/VERIFICA-0.4.1.md).
+
 > Aggiornamento 0.4.0: controlli prima di uscita/disconnessione, cambio posizione e reset facoltativo delle preferenze. Vedi [istruzioni](AGGIORNAMENTO-0.4.md) e [verifiche e limiti](docs/VERIFICA-0.4.md). Nessun fork di rclone.
 
 # Drive Tambu 2.0 - aggiornamento 0.2.0

@@ -1,0 +1,73 @@
+{
+  "version": "0.4.1",
+  "base_version": "0.4.0",
+  "base_commit": "4b3a01a2b8bc7b24d6cd023abd48a573fbbc2309",
+  "base_tree": "e52f20aef32376dbeb3c1b467b8727f4daf58dc4",
+  "files": [
+    {
+      "path": "AGGIORNAMENTO-0.4.1.md",
+      "change": "added",
+      "bytes": 4804,
+      "sha256": "ac726fe6e7d3be7920e2ffa7de7aad87ccb5a5048c1f16ff30deb7f0cea3bb93",
+      "previous_sha256": null
+    },
+    {
+      "path": "README.md",
+      "change": "modified",
+      "bytes": 9213,
+      "sha256": "864ebe3714e04eeabccccbc1531e5ee7dc7801c8d1493a38d2aa2132bb693675",
+      "previous_sha256": "a5a9d6ee3dca309dc0dbed170f348679ff5d0670611761ede69c632b466a2afc"
+    },
+    {
+      "path": "docs/VERIFICA-0.4.1.md",
+      "change": "added",
+      "bytes": 5552,
+      "sha256": "664fdf7aac0809e27b54b1e2730597a36a3a9ff66083d210ef3fefe482a59808",
+      "previous_sha256": null
+    },
+    {
+      "path": "package.json",
+      "change": "modified",
+      "bytes": 2194,
+      "sha256": "93a58f825059551ec2eb72a2bf3b331aa459d4c8d2be6f583275a5c98e76e22a",
+      "previous_sha256": "4a1e1887cd9dd3a2e9bc93f5688fb3febd08bae603ee9dbb6e759326e65dbad2"
+    },
+    {
+      "path": "src/main/index.ts",
+      "change": "modified",
+      "bytes": 23837,
+      "sha256": "32ae8c50f5e43ca1474cd4635b9a81984634d89feac731251160074b11e22817",
+      "previous_sha256": "71caf45a417f5407416590cabd00935aee7dcabc11559f01413edb6575cb504e"
+    },
+    {
+      "path": "src/main/shortcuts.ts",
+      "change": "modified",
+      "bytes": 5296,
+      "sha256": "64755960a3b066e44359c3bce3a9dd53b999129e1fb756f9429b55c574c89fac",
+      "previous_sha256": "a39c050286d56478f52600724d701457adc5cc2bae84ac1606c64fd5b3da7df6"
+    },
+    {
+      "path": "tests/helpers/launch-harness.cjs",
+      "change": "added",
+      "bytes": 6850,
+      "sha256": "6e074fe7d102419bb5d89007947c51874ea2286879347adafbf844cef44d33fb",
+      "previous_sha256": null
+    },
+    {
+      "path": "tests/shortcut-launch.test.cjs",
+      "change": "added",
+      "bytes": 6940,
+      "sha256": "0a2b190e94cdded238dd4aea6d71e916ec2290371567b7a535397ab7c209544e",
+      "previous_sha256": null
+    },
+    {
+      "path": "tests/shortcuts.test.cjs",
+      "change": "modified",
+      "bytes": 4572,
+      "sha256": "0a32422cc5a7fc23ad41ab90c81b3dd30557f9c0c1acc32ea7e73d05f3ad8095",
+      "previous_sha256": "40f65796d0787c111f0aa5957264156dfb84977844b8729d7d455bf033a67d9b"
+    }
+  ],
+  "delete": [],
+  "note": "The archive also contains this manifest; its own hash is intentionally excluded."
+}

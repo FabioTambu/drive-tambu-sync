@@ -17,7 +17,7 @@ test('shortcut filename cannot escape the selected parent directory',()=>{
 test('desktop launcher quotes the executable safely and includes only a saved ID',()=>{
  const {desktopEntry}=api()
  const text=desktopEntry('/home/user/My app 100%/Drive.AppImage','folder-123','A\nB')
- assert.ok(text.includes('Exec="/home/user/My app 100%%/Drive.AppImage" --open-folder folder-123'))
+ assert.ok(text.includes('Exec="/home/user/My app 100%%/Drive.AppImage" -- --open-folder folder-123'))
  assert.ok(!text.includes('Name=A\nB'))
  assert.ok(text.includes('Terminal=false'))
  assert.throws(()=>desktopEntry('/app\nbad','folder-123','name'),/eseguibile/)
@@ -52,4 +52,9 @@ test('shortcut propagates missing saved folder and connection error without crea
  await assert.rejects(missing.open('folder-123'),/rimossa/)
  const bad=new SavedFolderOpener({find:()=>({localPath:'/mount'}),state:()=>({status:'error',detail:'Accesso non autorizzato'}),connect:async()=>{},open:async()=>'',stopping:()=>false})
  await assert.rejects(bad.open('folder-123'),/Accesso non autorizzato/)
+})
+
+test('a silent Linux launcher does not ask the desktop to wait for an app window',()=>{
+ const {desktopEntry}=api()
+ assert.match(desktopEntry('/usr/bin/drive-tambu','folder-123','Files'),/^StartupNotify=false$/m)
 })

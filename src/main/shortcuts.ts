@@ -12,6 +12,18 @@ export function requestedFolder(argv: string[]): string | null {
   validId(id)
   return id
 }
+/** Electron may reorder second-instance argv. Prefer the sender's original arguments.
+ * Additional data is still untrusted input: malformed data must not open another folder.
+ * Older senders without this field continue to use the validated legacy argv parser.
+ */
+export function forwardedShortcutArguments(argv: string[], additionalData?: unknown): string[] {
+  if (!additionalData || typeof additionalData !== 'object' || !Object.hasOwn(additionalData, 'driveTambuArgv')) return argv
+  const original = (additionalData as { driveTambuArgv: unknown }).driveTambuArgv
+  if (!Array.isArray(original) || original.length > 128 || !original.every(arg => typeof arg === 'string' && arg.length <= 32768)) {
+    throw new Error('Richiesta del collegamento non valida. Ricrea il collegamento dall\'app.')
+  }
+  return [...original]
+}
 export function shortcutName(name: string): string {
   let leaf = name.trim().replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').replace(/[. ]+$/, '').slice(0, 100) || 'Cartella'
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(leaf)) leaf = `Cartella-${leaf}`
@@ -23,7 +35,7 @@ export function desktopEntry(executable: string, id: string, name: string): stri
   if (!executable.startsWith('/') || /[\r\n\0]/.test(executable)) throw new Error('Percorso eseguibile non valido.')
   // Exec has its own quoting rules, followed by Desktop Entry string escaping.
   const quoted = '"' + desktopString(executable.replace(/[%\\`"$]/g, c => c === '%' ? '%%' : '\\' + c)) + '"'
-  return `[Desktop Entry]\nType=Application\nVersion=1.0\nName=${desktopString(name)}\nComment=Apri la cartella con Drive Tambu\nExec=${quoted} --open-folder ${id}\nIcon=folder\nTerminal=false\nStartupNotify=true\n`
+  return `[Desktop Entry]\nType=Application\nVersion=1.0\nName=${desktopString(name)}\nComment=Apri la cartella con Drive Tambu\nExec=${quoted} -- --open-folder ${id}\nIcon=folder\nTerminal=false\nStartupNotify=false\n`
 }
 export function writeLinuxShortcut(destination: string, executable: string, id: string, name: string): void {
   if (!destination.endsWith('.desktop')) throw new Error('Il collegamento Linux deve avere estensione .desktop.')

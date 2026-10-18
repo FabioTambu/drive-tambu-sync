@@ -10,7 +10,7 @@ import type { PreflightResult } from './preflight'
 import { checkRemoteDirectory, diagnostics, errorDetails, listRemoteDirectories } from './diagnostics'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
-import { requestedFolder, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
+import { requestedFolder, forwardedShortcutArguments, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
 import type { AppSettings, MountConfig, Snapshot, WindowMode, OperationReply } from '../shared/types'
 
 let window: BrowserWindow | null = null
@@ -122,7 +122,7 @@ function createTray(): void {
     log(`Icona di notifica non disponibile: la finestra resta nella barra delle applicazioni. ${String(error)}`)
   }
 }
-function createWindow(): void {
+function createWindow(showOnReady = true): void {
   const bounds = layoutBounds(mode, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea)
   window = new BrowserWindow({
     ...bounds, minWidth: Math.min(320, bounds.width), minHeight: Math.min(440, bounds.height),
@@ -132,7 +132,8 @@ function createWindow(): void {
   })
   Menu.setApplicationMenu(null)
   positionWindow()
-  window.once('ready-to-show', () => window?.show())
+  // A folder shortcut starts the app silently; loading the renderer must not flash it.
+  if (showOnReady) window.once('ready-to-show', () => window?.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.on('blur', () => {
@@ -222,13 +223,14 @@ async function changeLocalPosition(previous: MountConfig, next: MountConfig): Pr
   showWindow()
   return promise
 }
-function handleShortcut(argv: string[]): void {
+function handleShortcut(argv: string[], showOnNormalLaunch = false, additionalData?: unknown): void {
   void (async () => {
-    if (argv.includes('--request-exit')) { app.quit(); return }
+    const args = forwardedShortcutArguments(argv, additionalData)
+    if (args.includes('--request-exit')) { app.quit(); return }
+    const id = requestedFolder(args)
+    if (!id) { if (showOnNormalLaunch) showWindow(); return }
     requireIdle()
-    const id = requestedFolder(argv)
-    if (!id) return
-    showWindow()
+    // Do not reveal/refocus the panel on success. Errors still use the visible catch below.
     log('Apertura della cartella dal collegamento...')
     await folderOpener.open(id)
   })().catch(error => {
@@ -367,7 +369,7 @@ function registerHandlers(): void {
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (process.platform === 'win32') {
       const ok = shell.writeShortcutLink(destination, 'create', {
-        target: process.execPath, args: `--open-folder ${m.id}`, cwd: path.dirname(process.execPath),
+        target: process.execPath, args: `-- --open-folder ${m.id}`, cwd: path.dirname(process.execPath),
         description: `Apri ${m.name} con Drive Tambu`, icon: process.execPath, iconIndex: 0
       })
       if (!ok) throw new Error('Non riesco a creare il collegamento. Scegli una posizione in cui puoi scrivere.')
@@ -401,8 +403,11 @@ app.on('window-all-closed', () => { if (!tray) app.quit() })
 
 app.whenReady().then(() => {
   try {
-    if (!app.requestSingleInstanceLock()) { exiting = true; app.quit(); return }
-    app.on('second-instance', (_event, argv) => {showWindow();handleShortcut(argv)})
+    const startupArgv = [...process.argv]
+    if (!app.requestSingleInstanceLock({driveTambuArgv: startupArgv})) { exiting = true; app.quit(); return }
+    app.on('second-instance', (_event, argv, _workingDirectory, additionalData) => {
+      handleShortcut(argv, true, additionalData)
+    })
     store = new ConfigStore()
     mounts = new MountManager(store, changed, log)
     backups = new BackupManager(store, changed, log)
@@ -417,14 +422,18 @@ app.whenReady().then(() => {
     nativeTheme.on('updated', () => {
       window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151821' : '#f6f8fc'); changed()
     })
-    registerHandlers(); createTray(); createWindow(); backups.startScheduler()
+    registerHandlers(); createTray()
+    const folderLaunch = startupArgv.includes('--open-folder') && !startupArgv.includes('--request-exit')
+    // Without a tray, keep the window reachable instead of leaving an invisible app.
+    createWindow(!folderLaunch || !tray)
+    backups.startScheduler()
     screen.on('display-metrics-changed', () => { if (mode === 'compact') positionWindow() })
     screen.on('display-removed', positionWindow)
     for (const m of store.mounts.filter(x => x.autoConnect)) setTimeout(() => {
       if (!exiting && !cleanupStarted && !operations.busy) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
     }, 1800)
     log('Drive Tambu avviato')
-    handleShortcut(process.argv)
+    handleShortcut(startupArgv)
   } catch (error) {
     dialog.showErrorBox('Drive Tambu', error instanceof Error ? error.message : String(error)); exiting = true; app.quit()
   }
