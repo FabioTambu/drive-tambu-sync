@@ -114,3 +114,101 @@ test('fixture initialization failures redact temporary credentials before leavin
     await fs.rm(root,{recursive:true,force:true})
   }
 })
+
+// Regression for the hosted run 39116390251: fixture-ready.txt must be
+// visible before the SFTP server can cache an empty directory. These tests
+// execute the actual fixture lifecycle, with only rclone's process boundary
+// simulated. They are not evidence of a native mount or shutdown guarantee.
+function markerFixtureModule() {
+  const vm = require('node:vm')
+  const syncFs = require('node:fs')
+  const {EventEmitter} = require('node:events')
+  const {PassThrough} = require('node:stream')
+  const module = {exports:{}}
+  const observed = {serverMarker:undefined, clientReads:[]}
+  const spawn = (_executable,args) => {
+    const child = new EventEmitter()
+    child.stdout = new PassThrough(); child.stderr = new PassThrough()
+    child.exitCode = null; child.signalCode = null
+    queueMicrotask(() => {
+      let code = 0
+      if (args[0] === 'obscure') child.stdout.write('fixture-obscured-password\n')
+      else if (args[0] === 'lsjson') child.stdout.write('{"IsDir":true}')
+      else if (args[0] === 'cat') {
+        observed.clientReads.push(args[1])
+        if (observed.serverMarker === undefined) {
+          child.stderr.write('object not found'); code = 1
+        } else child.stdout.write(observed.serverMarker)
+      } else {child.stderr.write('Unexpected fixture command'); code = 1}
+      child.exitCode = code
+      child.stdout.end(); child.stderr.end(); child.emit('close',code,null)
+    })
+    return child
+  }
+  const realSupport = require('../support.cjs')
+  const testSupport = {...realSupport,
+    // One readiness attempt removes the real-time delay, not its success test.
+    waitFor:async (fn,_timeout,label) => {
+      const value = await fn()
+      if (!value) throw new Error(`${label}: condition not met`)
+      return value
+    },
+    WriterClient:class {async dispose(){}}
+  }
+  const source = syncFs.readFileSync(path.join(__dirname,'../fixture.cjs'),'utf8')
+  const sandbox = {module,exports:module.exports,Buffer,process,console,setTimeout,clearTimeout,
+    require:id => id === 'node:child_process' ? {spawn} : id === './support.cjs' ? testSupport : require(id)}
+  vm.runInNewContext(source,sandbox,{filename:'fixture.cjs'})
+  return {StorageFixture:module.exports.StorageFixture,observed}
+}
+async function markerFixture(t) {
+  const {StorageFixture,observed} = markerFixtureModule()
+  const root = await fs.mkdtemp(path.join(os.tmpdir(),'drive-marker-regression-'))
+  const fixture = new StorageFixture('simulated-rclone',root)
+  fixture.launch = () => {
+    const marker = path.join(fixture.remote,'fixture-ready.txt')
+    try { observed.serverMarker = require('node:fs').readFileSync(marker,'utf8') }
+    catch (error) { if (error.code !== 'ENOENT') throw error; observed.serverMarker = undefined }
+    return {assertAlive(){}}
+  }
+  t.after(async () => {await fixture.dispose();await fs.rm(root,{recursive:true,force:true})})
+  return {fixture,observed}
+}
+
+test('marker is created before the first SFTP server starts', async t => {
+  const {fixture,observed} = await markerFixture(t)
+  await fixture.initialize()
+  assert.equal(observed.serverMarker,'probe-ready','the first server view must already contain the marker')
+  assert.equal(await fs.readFile(path.join(fixture.remote,'fixture-ready.txt'),'utf8'),'probe-ready')
+  assert.ok(observed.clientReads.includes('probe:/fixture-ready.txt'),'readiness must read through SFTP')
+})
+
+test('SFTP readiness rejects a missing marker even when the root directory exists', async t => {
+  const {fixture} = await markerFixture(t)
+  await fs.mkdir(fixture.remote,{recursive:true})
+  await assert.rejects(fixture.startServer(),/not found|marker|Marker/)
+})
+
+test('SFTP readiness rejects incorrect marker contents', async t => {
+  const {fixture} = await markerFixture(t)
+  await fs.mkdir(fixture.remote,{recursive:true})
+  await fs.writeFile(path.join(fixture.remote,'fixture-ready.txt'),'wrong-content')
+  await assert.rejects(fixture.startServer(),/marker|Marker/)
+})
+
+test('mounting does not modify an already prepared server marker', async t => {
+  const {fixture} = await markerFixture(t)
+  await fs.mkdir(fixture.remote,{recursive:true})
+  await fs.writeFile(path.join(fixture.remote,'fixture-ready.txt'),'leave-this-file-unchanged')
+  fixture.daemon = {assertAlive(){},async wait(){return {code:0}}}
+  fixture.call = async method => {
+    if (method === 'mount/types') return {mountTypes:['mount','cmount']}
+    if (method === 'mount/mount') {
+      await fs.mkdir(fixture.mountPoint,{recursive:true})
+      await fs.writeFile(path.join(fixture.mountPoint,'fixture-ready.txt'),'probe-ready')
+    }
+    return {}
+  }
+  await fixture.mount(1)
+  assert.equal(await fs.readFile(path.join(fixture.remote,'fixture-ready.txt'),'utf8'),'leave-this-file-unchanged')
+})

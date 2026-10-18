@@ -62,6 +62,9 @@ class StorageFixture {
   async initialize(){
     await fs.writeFile(path.join(this.root,'.fixture-owner'),'DriveTambu disposable CI fixture only\n',{mode:0o600})
     for(const dir of [this.home,this.cache,this.remote,'appdata','localappdata','config','state'].map(d=>path.isAbsolute(d)?d:path.join(this.home,d)))await fs.mkdir(dir,{recursive:true,mode:0o700})
+    // Prepare before the first SFTP request: the server has its own VFS
+    // directory cache. Creating this later can leave the marker invisible.
+    await fs.writeFile(path.join(this.remote,'fixture-ready.txt'),'probe-ready',{flag:'wx',mode:0o600})
     this.env=isolatedEnv(process.env,this.home)
     await fs.writeFile(this.config,'',{mode:0o600})
     this.obscured=await runTool(this.executable,['obscure',this.password,'--config',this.config],{env:this.env,cwd:this.root})
@@ -83,9 +86,10 @@ class StorageFixture {
       '--cache-dir',path.join(this.root,'server-cache'),'--log-level','NOTICE'],{RCLONE_USER:'probe',RCLONE_PASS:this.password})
     await waitFor(async()=>{
       this.server.assertAlive()
-      const result=await runTool(this.executable,['lsjson','probe:/','--stat','--sftp-disable-hashcheck','--sftp-shell-type','none','--contimeout','1s','--timeout','2s','--retries','1','--low-level-retries','1','--config',this.config],{env:this.env,cwd:this.root})
-      return JSON.parse(result).IsDir===true
-    },20000,'Local SFTP readiness')
+      const result=await runTool(this.executable,['cat','probe:/fixture-ready.txt','--count','64','--sftp-disable-hashcheck','--sftp-shell-type','none','--contimeout','1s','--timeout','2s','--retries','1','--low-level-retries','1','--config',this.config],{env:this.env,cwd:this.root})
+      if(result!=='probe-ready')throw new Error('Local SFTP marker has unexpected contents')
+      return true
+    },20000,'Local SFTP marker readiness')
   }
   async stopServer(){if(this.server)await this.server.stopForCleanup();this.server=null}
   async startDaemon(){
@@ -99,8 +103,8 @@ class StorageFixture {
     const types=await this.call('mount/types')
     const type=process.platform==='win32'?'cmount':'mount'
     if(!Array.isArray(types.mountTypes)||!types.mountTypes.includes(type))throw new Error(`Required mount implementation ${type} unavailable`)
-    // Place the marker before mounting, so it cannot be hidden by a cached listing.
-    await fs.writeFile(path.join(this.remote,'fixture-ready.txt'),'probe-ready')
+    // initialize() prepared the marker before starting the SFTP server, and
+    // startServer() verified its contents through SFTP. Do not rewrite it here.
     await this.call('mount/mount',mountRequest(this.mountPoint,writeBackSeconds,type),45000)
     this.mounted=true
     // The marker must be readable through the remote, not only an existing host directory.
