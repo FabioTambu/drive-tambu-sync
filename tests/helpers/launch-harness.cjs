@@ -9,7 +9,7 @@ async function launchHarness(t, options = {}) {
   const appRoot = path.resolve(__dirname, '../..')
   const id = '8a1cf954-9641-4848-8a07-3568cf90fad4'
   const localPath = path.join(root, 'mounted-folder')
-  const calls = {opened: [], connected: [], shown: 0, focused: 0, quits: 0, errors: [], lockData: undefined, paused: 0, resumed: 0}
+  const calls = {opened: [], connected: [], shown: 0, focused: 0, quits: 0, errors: [], lockData: undefined, paused: 0, resumed: 0, dialogOptions: []}
   const windows = [], trays = [], handlers = new Map()
   let status = options.status || 'connected'
   let preflightKind = options.preflightKind || 'confirm'
@@ -59,7 +59,7 @@ async function launchHarness(t, options = {}) {
   const destination = path.join(root, platform === 'win32' ? 'Files.lnk' : 'Files.desktop')
   const electron = {app, BrowserWindow: Window, Tray, screen, nativeTheme, Menu: {setApplicationMenu() {}, buildFromTemplate: v => v}, nativeImage: {createFromPath: () => ({resize: () => ({})})},
     ipcMain: {handle: (name, fn) => handlers.set(name, fn)},
-    dialog: {showErrorBox: (title, message) => calls.errors.push({title, message}), showSaveDialog: async () => ({canceled: false, filePath: destination})},
+    dialog: {showErrorBox: (title, message) => calls.errors.push({title, message}), showSaveDialog: async () => ({canceled: false, filePath: destination}), showOpenDialog: async (_window, options) => {calls.dialogOptions.push(options); return {canceled:true, filePaths:[]}}},
     shell: {openPath: async target => {calls.opened.push(target); return options.openError || ''}, writeShortcutLink: (dest, operation, shortcut) => {fs.writeFileSync(dest, JSON.stringify({operation, ...shortcut})); return true}}
   }
   const nativeMounts = {checkMountDestination() {}, MountManager: class {
@@ -81,6 +81,7 @@ async function launchHarness(t, options = {}) {
       if (file.endsWith(path.join('main', 'index.ts')) && name === './mounts') return nativeMounts
       if (file.endsWith(path.join('main', 'index.ts')) && name === './backups') return {BackupManager: class {startScheduler() {} pauseScheduling() {calls.paused++} resumeScheduling() {calls.resumed++} stop() {} state() { return {status: 'idle', detail: ''} }}}
       if (name === './setup-process' && options.runSetup) return {runSetupTool:options.runSetup}
+      if (name === './setup-dependencies' && options.setupComponents) return {inspectComponents:async()=>options.setupComponents,installComponents:async()=>options.setupComponents}
       if (name === './diagnostics' && options.runRclone) return {...load(path.resolve(path.dirname(file),name+'.ts')),runRclone:options.runRclone}
       if (name.startsWith('.')) return load(path.resolve(path.dirname(file), name + '.ts'))
       return require(name)

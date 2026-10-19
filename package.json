@@ -1,6 +1,6 @@
 {
   "name": "drive-tambu",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Drive Tambu: cartelle remote come locali, con rclone e backup protetti",
   "author": "Drive Tambu fabio.tamburini.07@gmail.com",

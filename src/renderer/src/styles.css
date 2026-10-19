@@ -359,3 +359,10 @@ svg { flex-shrink: 0; vertical-align: middle; }
 .setup-confirm input { width: 18px; height: 18px; flex-shrink: 0; margin: 0; }
 .setup-wizard .modal-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 0 0; flex-wrap: wrap; }
 @media (max-width: 550px) { .setup-components { grid-template-columns: minmax(0, 1fr); } }
+
+/* Guided setup: readable contextual guidance and compact, opt-in key suggestions. */
+.setup-fields .field { margin-bottom: 0; }
+.setup-fields .field-hint { font-size: 12px; line-height: 1.5; }
+.setup-fields .field-hint code { font-size: 0.95em; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.setup-key-suggestions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.setup-key-suggestions .button { padding: 6px 10px; min-height: 30px; font-size: 12px; }

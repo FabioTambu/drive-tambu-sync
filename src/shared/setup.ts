@@ -24,8 +24,13 @@ export interface SetupComponent {
   installable: boolean
   optional?: boolean
 }
+export interface SshKeySuggestions {
+  directory: string
+  keys: {name: string; path: string}[]
+}
 export interface SetupReport {
   platform: string
+  sshKeys?: SshKeySuggestions
   components: SetupComponent[]
   canInstall: boolean
   installationNote: string

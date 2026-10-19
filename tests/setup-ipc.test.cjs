@@ -23,3 +23,26 @@ test('setup blocks concurrent changes and quitting; background cannot resume sch
  finish({code:0,stdout:'{"IsDir":true}',stderr:''});const token=await preparing;assert.equal(h.snapshot().setupBusy,false);assert.equal(h.calls.resumed,1)
  await h.invoke('drive:cancelConnection',token.token)
 })
+
+test('key picker opens in the local SSH directory and setup exposes only common key filenames',async t=>{
+ const fs=require('node:fs'),path=require('node:path')
+ const h=await launchHarness(t,{status:'disconnected',platform:'linux'})
+ const home=h.app.getPath('home'),directory=path.join(home,'.ssh')
+ fs.mkdirSync(directory)
+ fs.writeFileSync(path.join(directory,'id_ed25519'),'test fixture')
+ fs.writeFileSync(path.join(directory,'id_ed25519.pub'),'public fixture')
+ const report=await h.invoke('drive:setupReport')
+ assert.deepEqual(report.sshKeys,{directory,keys:[{name:'id_ed25519',path:path.join(directory,'id_ed25519')}]})
+ assert.equal(await h.invoke('drive:chooseSshKey'),null)
+ assert.equal(h.calls.dialogOptions.length,1)
+ assert.equal(h.calls.dialogOptions[0].defaultPath,directory)
+})
+
+test('dependency installation keeps SSH key suggestions in the refreshed setup report',async t=>{
+ const fs=require('node:fs'),path=require('node:path')
+ const h=await launchHarness(t,{status:'disconnected',platform:'linux',setupComponents:{platform:'linux',components:[],canInstall:false,installationNote:'OK'}})
+ const home=h.app.getPath('home'),directory=path.join(home,'.ssh')
+ fs.mkdirSync(directory);fs.writeFileSync(path.join(directory,'id_rsa'),'test fixture')
+ const report=await h.invoke('drive:installComponents')
+ assert.deepEqual(report.sshKeys,{directory,keys:[{name:'id_rsa',path:path.join(directory,'id_rsa')}]})
+})

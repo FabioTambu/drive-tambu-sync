@@ -25,3 +25,42 @@ test('editing verified connection data discards the old fingerprint token',async
  const r=renderComponent('SetupWizard',{onClose(){},onSaved(){}});await r.button('Controlla componenti').props.onClick();await r.find(n=>n.type==='form').props.onSubmit({preventDefault(){}})
  await r.button('Modifica dati').props.onClick();assert.equal(cancelled,'old');assert.throws(()=>r.button('Salva connessione'))
 })
+
+test('setup explains each connection field and suggests existing keys without silently selecting one',async()=>{
+ const {renderComponent,text}=ui()
+ const sshKeys={directory:'/home/mario/.ssh',keys:[{name:'id_ed25519',path:'/home/mario/.ssh/id_ed25519'},{name:'id_rsa',path:'/home/mario/.ssh/id_rsa'}]}
+ let picked=0
+ global.window={drive:{setupReport:async()=>({...ready,sshKeys}),chooseSshKey:async()=>{picked++;return '/home/mario/.ssh/custom_key'}}}
+ const r=renderComponent('SetupWizard',{onClose(){},onSaved(){}})
+ await r.button('Controlla componenti').props.onClick()
+ const displayed=text(r.render())
+ assert.match(displayed,/Casa.*Ufficio.*NAS/)
+ assert.match(displayed,/configurazione SSH esistente|configurazione OpenSSH/i)
+ assert.match(displayed,/senza ssh:\/\//i)
+ assert.match(displayed,/utente.*server/i)
+ assert.match(displayed,/\/home\/mario\/\.ssh/)
+ assert.match(displayed,/id_ed25519/)
+ assert.match(displayed,/id_rsa/)
+ assert.match(displayed,/\.pub/)
+ assert.equal(r.byLabel('Chiave SSH esistente').props.value,'','never choose a private key without a deliberate click')
+ r.button('Usa id_ed25519').props.onClick()
+ assert.equal(r.byLabel('Chiave SSH esistente').props.value,'/home/mario/.ssh/id_ed25519')
+ await r.button('Sfoglia chiave').props.onClick()
+ assert.equal(picked,1)
+ assert.equal(r.byLabel('Chiave SSH esistente').props.value,'/home/mario/.ssh/custom_key')
+ r.byLabel('Tipo di connessione').props.onChange({target:{value:'cloudflare'}})
+ assert.match(text(r.render()),/dominio pubblico|tunnel Cloudflare/i)
+ r.byLabel('Tipo di connessione').props.onChange({target:{value:'direct'}})
+ assert.match(text(r.render()),/porta.*22|22.*porta/i)
+})
+
+test('SSH key location guidance remains available with no detected keys',async()=>{
+ const {renderComponent,text}=ui()
+ global.window={drive:{setupReport:async()=>({...ready,sshKeys:{directory:'C:\\Users\\Mario\\.ssh',keys:[]}})}}
+ const r=renderComponent('SetupWizard',{onClose(){},onSaved(){}})
+ await r.button('Controlla componenti').props.onClick()
+ assert.match(text(r.render()),/C:\\Users\\Mario\\.ssh/)
+ assert.match(text(r.render()),/id_ed25519/)
+ assert.equal(r.byLabel('Chiave SSH esistente').props.value,'')
+ assert.throws(()=>r.button('Usa id_ed25519'),/Expected control exists/)
+})

@@ -1,14 +1,16 @@
-# Drive Tambu 0.5.0
+# Drive Tambu 0.5.1
 
 Connessione guidata SSH/SFTP dall'app, rclone e cloudflared ufficiali inclusi nel pacchetto, installazione autorizzata dei componenti di sistema mancanti.
 
-**Istruzioni correnti:** [aggiornamento e primo avvio](AGGIORNAMENTO-0.5.0.md). **Stato delle verifiche:** [rapporto 0.5.0](docs/VERIFICA-0.5.0.md). La patch dei sorgenti non equivale a un installer compilato o a un collaudo nativo riuscito.
+**Istruzioni correnti:** [migliorie di configurazione 0.5.1](AGGIORNAMENTO-0.5.1.md), [primo avvio 0.5.0](AGGIORNAMENTO-0.5.0.md). **Stato delle verifiche:** [rapporto 0.5.1](docs/VERIFICA-0.5.1.md), [rapporto 0.5.0](docs/VERIFICA-0.5.0.md). La patch dei sorgenti non equivale a un installer compilato o a un collaudo nativo riuscito.
 
 Windows e Linux x64. Per installazioni nuove su Mint/Ubuntu/Debian preferire il `.deb`. Rclone e cloudflared vengono scaricati durante la build con versioni e SHA256 fissati, senza modificare quelli del sistema. L'installazione di WinFsp/FUSE/OpenSSH richiede il consenso del sistema operativo quando necessario. Le connessioni e le chiavi esistenti restano al loro posto.
 
+Nella 0.5.1 il wizard propone automaticamente la cartella delle chiavi SSH nel selettore e suggerisce i percorsi piu comuni, con indicazioni sotto ogni campo. Non legge ne copia i contenuti delle chiavi; la scelta rimane esplicita.
+
 Il wizard offre host SSH esistente, SSH diretto e Cloudflare Tunnel. Usa chiavi già autorizzate o un agente funzionante; non crea chiavi, non modifica il server e non memorizza password SSH. Le nuove connessioni restano private dell'app e vengono elencate solo dopo il controllo SFTP.
 
-## Sviluppo e build della 0.5.0
+## Sviluppo e build della 0.5.1
 
 ```text
 npm install
@@ -23,7 +25,7 @@ Eseguire il comando dist sul relativo sistema. Per preparare i componenti nativi
 
 ## Documentazione storica conservata (fino alla 0.4.1)
 
-La parte seguente descrive versioni precedenti. Le indicazioni sui componenti da installare manualmente e le dichiarazioni dei vecchi ambienti di build non sostituiscono le istruzioni e il rapporto 0.5.0 qui sopra.
+La parte seguente descrive versioni precedenti. Le indicazioni sui componenti da installare manualmente e le dichiarazioni dei vecchi ambienti di build non sostituiscono le istruzioni 0.5.0 e 0.5.1 qui sopra.
 
 ---
 

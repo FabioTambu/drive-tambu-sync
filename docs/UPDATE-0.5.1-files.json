@@ -1,0 +1,74 @@
+{
+  "project": "Drive Tambu",
+  "from": "0.5.0",
+  "to": "0.5.1",
+  "date": "2026-10-19",
+  "note": "Only explicitly changed paths are listed. The manifest itself is excluded from the digest list. Apply on top of the 0.5.0 sources.",
+  "files": [
+    {
+      "path": "AGGIORNAMENTO-0.5.1.md",
+      "sha256": "440dc900bd293425a43ca19ccbc4490344d07325441dbb0aab972aeb4279eb93",
+      "bytes": 4155
+    },
+    {
+      "path": "README.md",
+      "sha256": "c8cab3f5616654652c1562ec1d6fb5111a8f8b08526908f59fa939ad534c569d",
+      "bytes": 11368
+    },
+    {
+      "path": "docs/VERIFICA-0.5.1.md",
+      "sha256": "9268ac305803fb9fc03535eb0e65ab4ce3755ca857a458b31eb7fcd7b9d0b671",
+      "bytes": 2483
+    },
+    {
+      "path": "package.json",
+      "sha256": "d93421a8675cb65ffacb17c22c7df42cd3ac7471ce8dd01d4c99205934dbdb75",
+      "bytes": 2966
+    },
+    {
+      "path": "src/main/index.ts",
+      "sha256": "f2d4538424f721ea99d722d5e82ae3c441d2c15e4b3bd3238b01389df4d6be65",
+      "bytes": 27670
+    },
+    {
+      "path": "src/main/ssh-key-discovery.ts",
+      "sha256": "0be995de4dbc6c24eade6946923c126f4e2e60b92d31a2dd2b4f4552ca42acad",
+      "bytes": 1219
+    },
+    {
+      "path": "src/renderer/src/SetupWizard.tsx",
+      "sha256": "77f001a3dcabb589bae533848a0d1515cf6f0bef77a6462f2d1e2ef1d89a2cb3",
+      "bytes": 14179
+    },
+    {
+      "path": "src/renderer/src/styles.css",
+      "sha256": "23f7b158c28062b62913225e87c7e9d2e5bc3ae61241745df68babbd5f343646",
+      "bytes": 30859
+    },
+    {
+      "path": "src/shared/setup.ts",
+      "sha256": "0208dfb37092378fa970a62f3c3a76bd9ebe7c2d69cb56559a73b9188228d558",
+      "bytes": 987
+    },
+    {
+      "path": "tests/helpers/launch-harness.cjs",
+      "sha256": "2663b46780c448943eb51715b4640e83b2a43f5808e8cf4e38ec27fd4f61b5d6",
+      "bytes": 7465
+    },
+    {
+      "path": "tests/setup-ipc.test.cjs",
+      "sha256": "4325d95c0a75da4da233aee390e86030ba1a0e7d273e42a1f9f587a644e55b8f",
+      "bytes": 3621
+    },
+    {
+      "path": "tests/setup-ssh-key-hints.test.cjs",
+      "sha256": "bdded71a87d38196dab7a59f2850b5a8ed006f7231091ed24e75ce008e702e7a",
+      "bytes": 1825
+    },
+    {
+      "path": "tests/setup-ui.test.cjs",
+      "sha256": "b5a67369129379e521ca9ec1c7c14be642b48facf7c194e84a80b565fb90a000",
+      "bytes": 5452
+    }
+  ]
+}

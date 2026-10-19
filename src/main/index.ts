@@ -12,6 +12,8 @@ import { ConnectionSetup } from './setup-connections'
 import { configureConnectionProfiles } from './connection-profiles'
 import { configureRuntimeTools } from './runtime-tools'
 import { inspectComponents, installComponents } from './setup-dependencies'
+import { discoverSshKeys, sshKeyBrowserStart } from './ssh-key-discovery'
+import type { SetupReport } from '../shared/setup'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
 import { requestedFolder, forwardedShortcutArguments, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
@@ -264,6 +266,10 @@ function handleShortcut(argv: string[], showOnNormalLaunch = false, additionalDa
   })
 }
 
+function includeSshKeyHints(report: SetupReport): SetupReport {
+  return {...report, sshKeys: discoverSshKeys(app.getPath('home'), process.platform)}
+}
+
 function registerHandlers(): void {
   const guard = (event: Electron.IpcMainInvokeEvent): void => {
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Richiesta non autorizzata.')
@@ -275,8 +281,12 @@ function registerHandlers(): void {
   })
   ipcMain.handle('drive:snapshot', e => { guard(e); return snapshot() })
   ipcMain.handle('drive:diagnostics', e => { guard(e); return diagnostics(store) })
-  ipcMain.handle('drive:setupReport', e => { guard(e); return inspectComponents(resolveRcloneExecutable(store.settings.rcloneExecutable)) })
-  ipcMain.handle('drive:installComponents', e => { guard(e); return withSetup(() => installComponents(resolveRcloneExecutable(store.settings.rcloneExecutable)), true) })
+  ipcMain.handle('drive:setupReport', async e => {
+    guard(e)
+    const report = await inspectComponents(resolveRcloneExecutable(store.settings.rcloneExecutable))
+    return includeSshKeyHints(report)
+  })
+  ipcMain.handle('drive:installComponents', e => { guard(e); return withSetup(async () => includeSshKeyHints(await installComponents(resolveRcloneExecutable(store.settings.rcloneExecutable))), true) })
   ipcMain.handle('drive:prepareConnection', (e, draft: unknown) => { guard(e); return withSetup(() => connectionSetup.prepare(draft)) })
   ipcMain.handle('drive:saveConnection', (e, token: string, confirmed: boolean) => {
     guard(e)
@@ -291,7 +301,7 @@ function registerHandlers(): void {
   ipcMain.handle('drive:cloudflareLogin', (e, host: string) => { guard(e); return withSetup(() => connectionSetup.login(host)) })
   ipcMain.handle('drive:chooseSshKey', async e => {
     guard(e); requireIdle()
-    const result = await withDialog(() => dialog.showOpenDialog(window!, {title:'Scegli una chiave SSH esistente', properties:['openFile']}))
+    const result = await withDialog(() => dialog.showOpenDialog(window!, {title:'Scegli una chiave SSH esistente', defaultPath: sshKeyBrowserStart(app.getPath('home'), process.platform), properties:['openFile']}))
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   ipcMain.handle('drive:setWindowMode', (e, next: WindowMode) => { guard(e); setMode(next) })
