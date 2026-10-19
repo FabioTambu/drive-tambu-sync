@@ -9,7 +9,7 @@ async function launchHarness(t, options = {}) {
   const appRoot = path.resolve(__dirname, '../..')
   const id = '8a1cf954-9641-4848-8a07-3568cf90fad4'
   const localPath = path.join(root, 'mounted-folder')
-  const calls = {opened: [], connected: [], shown: 0, focused: 0, quits: 0, errors: [], lockData: undefined}
+  const calls = {opened: [], connected: [], shown: 0, focused: 0, quits: 0, errors: [], lockData: undefined, paused: 0, resumed: 0}
   const windows = [], trays = [], handlers = new Map()
   let status = options.status || 'connected'
   let preflightKind = options.preflightKind || 'confirm'
@@ -79,7 +79,9 @@ async function launchHarness(t, options = {}) {
     function localRequire(name) {
       if (name === 'electron') return electron
       if (file.endsWith(path.join('main', 'index.ts')) && name === './mounts') return nativeMounts
-      if (file.endsWith(path.join('main', 'index.ts')) && name === './backups') return {BackupManager: class {startScheduler() {} pauseScheduling() {} resumeScheduling() {} stop() {} state() { return {status: 'idle', detail: ''} }}}
+      if (file.endsWith(path.join('main', 'index.ts')) && name === './backups') return {BackupManager: class {startScheduler() {} pauseScheduling() {calls.paused++} resumeScheduling() {calls.resumed++} stop() {} state() { return {status: 'idle', detail: ''} }}}
+      if (name === './setup-process' && options.runSetup) return {runSetupTool:options.runSetup}
+      if (name === './diagnostics' && options.runRclone) return {...load(path.resolve(path.dirname(file),name+'.ts')),runRclone:options.runRclone}
       if (name.startsWith('.')) return load(path.resolve(path.dirname(file), name + '.ts'))
       return require(name)
     }

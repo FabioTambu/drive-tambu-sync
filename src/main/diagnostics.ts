@@ -4,6 +4,8 @@ import path from 'node:path'
 import type { Dependencies, RemoteListing } from '../shared/types'
 import type { ConfigStore } from './store'
 import { childRemotePath, normalizeRemotePath, parentRemotePath } from '../shared/paths'
+import { selectRclone, runtimeEnvironment, compatibleRclone } from './runtime-tools'
+import { managedConnections, managedRemoteFlags } from './connection-profiles'
 
 // Avoid remote shell/hash probes: the app only needs the SFTP subsystem.
 // This also avoids additional SSH sessions through Cloudflare for every probe.
@@ -17,7 +19,7 @@ export function connectionError(error: unknown): ConnectionError {
   if (error instanceof ConnectionError) return error
   const e = error as { message?: string; stderr?: string; code?: string }
   const detail = (e?.stderr || e?.message || String(error)).trim().slice(-1800)
-  if (e?.code === 'ENOENT') return new ConnectionError('missing-component', 'Il componente di collegamento non e stato trovato. Apri Impostazioni e premi Rileva di nuovo.', detail)
+  if (e?.code === 'ENOENT') return new ConnectionError('missing-component', 'Il componente di collegamento non e stato trovato. Apri Impostazioni e scegli Configura connessione e componenti.', detail)
   if (/host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|knownhosts|host key.*mismatch/i.test(detail)) return new ConnectionError('host-key', 'Non e possibile verificare l\'identita del server. Non ignorare questo avviso: controlla la chiave del server.', detail)
   if (/permission denied.*publickey|unable to authenticate|authentication failed|no supported methods remain|sign_and_send_pubkey/i.test(detail)) return new ConnectionError('authentication', 'Il server non ha autorizzato l\'accesso. La chiave SSH deve essere disponibile e sbloccata sul computer.', detail)
   if (/WinFsp|cgofuse|fusermount|libfuse|fuse device not found/i.test(detail)) return new ConnectionError('filesystem', 'Manca il componente necessario per collegare le cartelle: WinFsp su Windows o FUSE su Linux. Controlla le Impostazioni.', detail)
@@ -38,6 +40,8 @@ export function remoteSpec(remote: string, remotePath: string): string {
   return `${remote}:${normalizeRemotePath(remote, remotePath)}`
 }
 export function resolveRcloneExecutable(configured: string): string {
+  const selected = selectRclone(configured)
+  if (selected !== configured) return selected
   if (configured !== 'rclone' && configured !== 'rclone.exe') return configured
   if (process.platform !== 'win32') return configured
   const candidates = [
@@ -63,7 +67,7 @@ export function runRclone(executable: string, args: string[], timeout = 30000, s
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new ConnectionError('cancelled', 'Operazione annullata.')); return }
     let child: ChildProcess
-    try { child = spawn(resolveRcloneExecutable(executable), args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] }) }
+    try { child = spawn(resolveRcloneExecutable(executable), args, { env: runtimeEnvironment(), shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] }) }
     catch (error) { reject(connectionError(error)); return }
     let done = false, stdout = '', stderr = '', size = 0
     let timer: NodeJS.Timeout | undefined
@@ -97,7 +101,7 @@ export function runRclone(executable: string, args: string[], timeout = 30000, s
 
 export async function listRemoteDirectories(executable: string, remote: string, input: string, signal?: AbortSignal): Promise<RemoteListing> {
   const remotePath = normalizeRemotePath(remote, input)
-  const output = await runRclone(executable, ['lsjson', remoteSpec(remote, remotePath), '--dirs-only', '--no-modtime', '--no-mimetype', ...READ_FLAGS], 40000, signal)
+  const output = await runRclone(executable, ['lsjson', remoteSpec(remote, remotePath), '--dirs-only', '--no-modtime', '--no-mimetype', ...READ_FLAGS, ...managedRemoteFlags(remote)], 40000, signal)
   let items: unknown
   try { items = JSON.parse(output) } catch { throw new ConnectionError('invalid-response', 'Il server ha restituito un elenco non valido. Riprova.') }
   if (!Array.isArray(items)) throw new ConnectionError('invalid-response', 'Il server ha restituito un elenco non valido. Riprova.')
@@ -107,7 +111,7 @@ export async function listRemoteDirectories(executable: string, remote: string, 
   return { remote, path: remotePath, parent: parentRemotePath(remotePath), entries }
 }
 export async function checkRemoteDirectory(executable: string, remote: string, remotePath: string, signal?: AbortSignal): Promise<void> {
-  const output = await runRclone(executable, ['lsjson', remoteSpec(remote, remotePath), '--stat', '--no-modtime', '--no-mimetype', ...READ_FLAGS], 40000, signal)
+  const output = await runRclone(executable, ['lsjson', remoteSpec(remote, remotePath), '--stat', '--no-modtime', '--no-mimetype', ...READ_FLAGS, ...managedRemoteFlags(remote)], 40000, signal)
   let item: { IsDir?: boolean }
   try { item = JSON.parse(output) } catch { throw new ConnectionError('invalid-response', 'Il server ha restituito una risposta non valida. Riprova.') }
   if (item?.IsDir !== true) throw new ConnectionError('not-directory', 'Il percorso scelto non e una cartella. Premi Sfoglia per scegliere una directory.')
@@ -118,9 +122,11 @@ export async function diagnostics(store: ConfigStore): Promise<Dependencies> {
   const note = process.platform === 'win32' ? 'Per collegare le cartelle serve WinFsp installato.' : 'Per collegare le cartelle serve FUSE installato. Su Wayland il posizionamento del pannello dipende dal desktop.'
   try {
     const version = (await runRclone(binary, ['version'], 9000)).split('\n')[0]
+    if (!compatibleRclone(version)) return { rclone: { ok: false, detail: `${version}. Serve rclone 1.64.0 o successivo. Usa il componente incluso in Drive Tambu oppure aggiorna quello personalizzato.` }, remotes: [], note }
     try {
       const remotes = (await runRclone(binary, ['listremotes'], 9000)).split(/\r?\n/).map(v => v.trim().replace(/:$/, '')).filter(Boolean)
-      return { rclone: { ok: true, detail: version }, remotes, note }
+      const managed = managedConnections()
+      return { rclone: { ok: true, detail: version }, remotes: [...new Set([...remotes, ...managed.map(c => c.remote)])], remoteLabels: Object.fromEntries(managed.map(c => [c.remote, c.name])), note }
     } catch (error) {
       return { rclone: { ok: true, detail: version }, remotes: [], note, connectionError: connectionError(error).message }
     }

@@ -6,6 +6,8 @@ import { ConfigStore, validateMount } from './store'
 import { effectiveRefreshSeconds } from '../shared/refresh'
 import { checkRemoteDirectory, errorDetails, remoteSpec, resolveRcloneExecutable, SFTP_FLAGS } from './diagnostics'
 import { createControl, type ControlClient } from './control'
+import { managedRemoteFlags } from './connection-profiles'
+import { runtimeEnvironment } from './runtime-tools'
 import { assessTransfers, unknownActivity, type PreflightResult } from './preflight'
 
 type RuntimeMount = {
@@ -72,8 +74,8 @@ export class MountManager {
     if(s.abort.signal.aborted)return
     s.client=control.client;s.secret=control.secret
     const args=['rcd','--rc-addr',`127.0.0.1:${control.client.port}`,'--rc-no-auth=false','--rc-web-gui=false','--rc-serve=false',
-      '--contimeout','15s','--log-level','NOTICE',...SFTP_FLAGS]
-    const child=spawn(resolveRcloneExecutable(executable),args,{env:control.env,shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']})
+      '--contimeout','15s','--log-level','NOTICE',...SFTP_FLAGS,...managedRemoteFlags(m.remote)]
+    const child=spawn(resolveRcloneExecutable(executable),args,{env:runtimeEnvironment(control.env),shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']})
     s.child=child
     s.closed=new Promise(resolve=>{
       child.once('close',()=>{

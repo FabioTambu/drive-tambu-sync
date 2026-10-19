@@ -82,3 +82,10 @@ test('second-instance shortcut arguments open the saved folder in the existing a
   await ready();app.emit('second-instance',{},['drive-tambu','--open-folder','shortcut-123']);await ready()
   assert.ok(opened.includes(path.join(tmp,'linked')));assert.equal(windows.length,1)
 })
+test('all setup IPC endpoints reject other windows and subframes before any side effect',async()=>{
+ await ready()
+ for(const name of ['setupReport','installComponents','chooseSshKey','prepareConnection','saveConnection','cancelConnection','cloudflareLogin']){
+  const handler=handlers.get('drive:'+name);assert.equal(typeof handler,'function')
+  for(const badEvent of [{sender:{}},{...event(),senderFrame:{}}])await assert.rejects(async()=>handler(badEvent),/autorizzata/,name)
+ }
+})

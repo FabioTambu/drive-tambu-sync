@@ -3,6 +3,13 @@ import type { AppSettings, DriveAPI, MountConfig, WindowMode } from '../shared/t
 
 // Only a fixed, typed API is exposed. The renderer never receives raw ipcRenderer.
 const api: DriveAPI = {
+  setupReport: () => ipcRenderer.invoke('drive:setupReport'),
+  installComponents: () => ipcRenderer.invoke('drive:installComponents'),
+  chooseSshKey: () => ipcRenderer.invoke('drive:chooseSshKey'),
+  prepareConnection: draft => ipcRenderer.invoke('drive:prepareConnection', draft),
+  saveConnection: (token, confirmed) => ipcRenderer.invoke('drive:saveConnection', token, confirmed),
+  cancelConnection: token => ipcRenderer.invoke('drive:cancelConnection', token),
+  cloudflareLogin: host => ipcRenderer.invoke('drive:cloudflareLogin', host),
   respondToOperation: (id, reply) => ipcRenderer.invoke('drive:respondToOperation', id, reply),
   snapshot: () => ipcRenderer.invoke('drive:snapshot'),
   diagnostics: () => ipcRenderer.invoke('drive:diagnostics'),

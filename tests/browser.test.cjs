@@ -57,3 +57,7 @@ test('only an existing sole or preferred server is selected automatically', () =
   assert.equal(selectedRemote(['casa','ufficio'],'ufficio'), 'ufficio')
   assert.equal(selectedRemote(['casa','ufficio'],'inesistente'), '')
 })
+test('managed remote directory reads use the private rclone config',async t=>{
+ const p=require('./helpers/managed-profile.cjs')(t);response='[]';await listRemoteDirectories('rclone',p.remote,'')
+ assert.equal(args[args.indexOf('--config')+1],p.config)
+})

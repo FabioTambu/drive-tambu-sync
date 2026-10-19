@@ -1,6 +1,6 @@
 {
   "name": "drive-tambu",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "Drive Tambu: cartelle remote come locali, con rclone e backup protetti",
   "author": "Drive Tambu fabio.tamburini.07@gmail.com",
@@ -11,9 +11,10 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
-    "dist:linux": "npm run build && electron-builder --linux deb AppImage --x64 --publish never",
-    "test": "node -r ./tests/register.cjs --test tests/*.test.cjs"
+    "dist:win": "npm run prepare:vendor -- --platform win32 && npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:linux": "npm run prepare:vendor -- --platform linux && npm run build && electron-builder --linux deb AppImage --x64 --publish never",
+    "test": "node -r ./tests/register.cjs --test tests/*.test.cjs",
+    "prepare:vendor": "node scripts/prepare-vendor.cjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -53,7 +54,13 @@
         "nsis"
       ],
       "icon": "resources/icon.ico",
-      "artifactName": "DriveTambu-${version}-Windows.${ext}"
+      "artifactName": "DriveTambu-${version}-Windows.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/vendor/win32-x64",
+          "to": "vendor"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -71,7 +78,31 @@
       "maintainer": "Drive Tambu <fabio.tamburini.07@gmail.com>",
       "icon": "resources/icons",
       "synopsis": "Drive Tambu - gestore cartelle remote",
-      "artifactName": "DriveTambu-${version}-Linux-${arch}.${ext}"
-    }
+      "artifactName": "DriveTambu-${version}-Linux-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/vendor/linux-x64",
+          "to": "vendor"
+        }
+      ]
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libgbm1",
+        "fuse3",
+        "openssh-client",
+        "pkexec"
+      ]
+    },
+    "afterPack": "./scripts/verify-vendor.cjs"
   }
 }

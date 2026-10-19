@@ -1,0 +1,337 @@
+{
+  "version": "0.5.0",
+  "repository": "FabioTambu/drive-tambu-sync",
+  "base_commit": "378fc1c3478beffb681f2cf568e0bee5fc502938",
+  "app_baseline_commit": "258c827f11bc225e7d1846732749945865949e2d",
+  "prepared_date": "2026-10-19",
+  "removed_files": [],
+  "notes": [
+    "Changed source files only; copy preserving paths and hidden files. No installer included.",
+    "This manifest does not include a checksum of itself.",
+    "Unchanged historical dossiers do not describe version 0.5.0."
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/build.yml",
+      "action": "replace",
+      "bytes": 1694,
+      "sha256": "733a905d64849837c332ede761cd742f91e8713537d328f6d901f025f4fa15a3",
+      "baseline_sha256": "b10445c7c5b1233716ee218752d3cd1a3199c868e33109a92423d9749b0e8245"
+    },
+    {
+      "path": ".gitignore",
+      "action": "replace",
+      "bytes": 194,
+      "sha256": "e7ffbf5d5f09039dcf3016d6b8581cc5a427ddee6033b933e6f1bb755d060121",
+      "baseline_sha256": "bd0d356e1d8ab9bd455225d982138dd20305facb4db1cd54e1fa53b873d46ecc"
+    },
+    {
+      "path": "AGGIORNAMENTO-0.5.0.md",
+      "action": "add",
+      "bytes": 8939,
+      "sha256": "40730fd4baa51122940749f088881e4b31bef80813757b6cb7e16ce09e36055f",
+      "baseline_sha256": null
+    },
+    {
+      "path": "README.md",
+      "action": "replace",
+      "bytes": 11048,
+      "sha256": "421cd96269fa55d52569d02c3b80efb86db983c251e956749044bf200e64d2b6",
+      "baseline_sha256": "864ebe3714e04eeabccccbc1531e5ee7dc7801c8d1493a38d2aa2132bb693675"
+    },
+    {
+      "path": "docs/VERIFICA-0.5.0.md",
+      "action": "add",
+      "bytes": 8253,
+      "sha256": "ee871fff08be6683c87b02a0981c4cea4a0b3b2171a16e1a3bf5f3f84a3a9619",
+      "baseline_sha256": null
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-19-first-run-setup.md",
+      "action": "add",
+      "bytes": 4954,
+      "sha256": "9f746301c377d615e0ff2f6aa96da05cc2135508e458d2f402c7dfffb9f1f88f",
+      "baseline_sha256": null
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-19-first-run-setup.md",
+      "action": "add",
+      "bytes": 2874,
+      "sha256": "0caec3c25b3e46df9e21ff435974a5e476925c05e8c899629d1831bade4210f6",
+      "baseline_sha256": null
+    },
+    {
+      "path": "package.json",
+      "action": "replace",
+      "bytes": 2966,
+      "sha256": "01937ed43fbcbbffbbecdb48e45cd0cf8fa6bb9ed6cda01b6b4919a660a152fb",
+      "baseline_sha256": "93a58f825059551ec2eb72a2bf3b331aa459d4c8d2be6f583275a5c98e76e22a"
+    },
+    {
+      "path": "resources/THIRD-PARTY-NOTICES.txt",
+      "action": "add",
+      "bytes": 976,
+      "sha256": "7c6bdacbb2f4792a3e1a9816eb4bf3827a061fd556d5c5e250d34fb819af42a6",
+      "baseline_sha256": null
+    },
+    {
+      "path": "resources/vendor-manifest.json",
+      "action": "add",
+      "bytes": 1353,
+      "sha256": "98f322b11aecf7c4a2c6d27e18085f1ddae2eb12b4510b739aadb399a9f07599",
+      "baseline_sha256": null
+    },
+    {
+      "path": "scripts/prepare-vendor.cjs",
+      "action": "add",
+      "bytes": 4687,
+      "sha256": "541f25db7ceb5ec9aaf8bd888120c48fbfdb571ff982a87f9704f817a551772c",
+      "baseline_sha256": null
+    },
+    {
+      "path": "scripts/verify-vendor.cjs",
+      "action": "add",
+      "bytes": 1536,
+      "sha256": "41a78d80dc5f8222d051ec61b553687ab41af4401f6a0636d7cc9fab11443cb6",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/main/backups.ts",
+      "action": "replace",
+      "bytes": 9851,
+      "sha256": "1b6fd62f0528f142aa86bef83ec91e80850abb7e9a1e7f508134e532b9d037ba",
+      "baseline_sha256": "5c93cf37bf1d15c8bc8fbd9481b51c1bfed6c888ee0b582160978655143b1900"
+    },
+    {
+      "path": "src/main/connection-profiles.ts",
+      "action": "add",
+      "bytes": 2279,
+      "sha256": "3195e418258b3aac4a72f6130912ec20e91ae818939973e0ea65c2cbf3478460",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/main/diagnostics.ts",
+      "action": "replace",
+      "bytes": 10839,
+      "sha256": "397c39bde35b91dd18ff838e1cff3d41a6607dc235a6cf517bcf5d8dade418bb",
+      "baseline_sha256": "e31bbaab92eadb000f2e0abfcbabe66caf2335c59b73d01c469145b53a5b0ee5"
+    },
+    {
+      "path": "src/main/index.ts",
+      "action": "replace",
+      "bytes": 27221,
+      "sha256": "9aa01bdc4921a0eccf1ee3f7f69342fa57fac54d6192bf3a26302b5fc05fe48e",
+      "baseline_sha256": "32ae8c50f5e43ca1474cd4635b9a81984634d89feac731251160074b11e22817"
+    },
+    {
+      "path": "src/main/mounts.ts",
+      "action": "replace",
+      "bytes": 11975,
+      "sha256": "efe3a4365678c77d13249eef3ac8327d10210f4d02da8af286cc2784d8cc18f5",
+      "baseline_sha256": "5d3acb20e4f56c02f69e4557e3981c839b0f0c53f5d3f171585c3bb90f6b9aa1"
+    },
+    {
+      "path": "src/main/runtime-tools.ts",
+      "action": "add",
+      "bytes": 1846,
+      "sha256": "8847caeae308ff77fec0f73766140e252076b3fa3fe42c41d264030493b2ed97",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/main/setup-connections.ts",
+      "action": "add",
+      "bytes": 12896,
+      "sha256": "b71c1103216ad94fd96eda273ed5ff61a4d484d80af2cce959a9183fcdd56207",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/main/setup-dependencies.ts",
+      "action": "add",
+      "bytes": 8583,
+      "sha256": "29b7cd30b11cf888214677df071000b00cd4e1bcfaf4517e323f758576b14e4e",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/main/setup-process.ts",
+      "action": "add",
+      "bytes": 2227,
+      "sha256": "66e0d70b5b7fe6d58d3885f4aa0daf1da371fbc2ea1b7285b95448da66366ce8",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/preload/index.ts",
+      "action": "replace",
+      "bytes": 2736,
+      "sha256": "e03284ff2c9b3a08333a004145503169fb9113e3461ed2f02ddcfb8f24544481",
+      "baseline_sha256": "971b59174ded3f342b0b94f83907367b2d206f5ed97f15242ae281611bfb7ed4"
+    },
+    {
+      "path": "src/renderer/src/App.tsx",
+      "action": "replace",
+      "bytes": 48101,
+      "sha256": "7551dd59f82abeeb515874caef3019dc786ce0e0ac633fea00f194bbc6739842",
+      "baseline_sha256": "fe96df42a6d38ef565be967f78918e0395fec372c236b3005ff62753cc483c2b"
+    },
+    {
+      "path": "src/renderer/src/Dialog.tsx",
+      "action": "add",
+      "bytes": 2311,
+      "sha256": "386920c53d44fa04e77df081805c80d732c1c9da48a078e831972511a12ff2af",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/renderer/src/SetupWizard.tsx",
+      "action": "add",
+      "bytes": 11899,
+      "sha256": "09d9cec392d403a0b82ddca75f50227378aef7cd59dd298f00653a813ffca682",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/renderer/src/styles.css",
+      "action": "replace",
+      "bytes": 30368,
+      "sha256": "5859997b32b5ec09bbfe9fda975780ac777f54e7cd2b555dde8929abe4678837",
+      "baseline_sha256": "061b36cbce695cda3afada69b3bafa0d1be37807c87a61bd8647719cd3eef90f"
+    },
+    {
+      "path": "src/shared/setup.ts",
+      "action": "add",
+      "bytes": 859,
+      "sha256": "448a4dfe6bdb1eac337157bbdf512969e119a051fec771f12d8544547ec44048",
+      "baseline_sha256": null
+    },
+    {
+      "path": "src/shared/types.ts",
+      "action": "replace",
+      "bytes": 4354,
+      "sha256": "ce08e287aff37c4dd94479322a77609bc6b7ae052053a6d15b67910f4a431ccd",
+      "baseline_sha256": "b3f0bfcf8c0787ffd7d9db223b20f3e633a9d7195ab3e55775eaea3135184e17"
+    },
+    {
+      "path": "tests/backups.test.cjs",
+      "action": "replace",
+      "bytes": 6698,
+      "sha256": "bce5e2ddd9ce3184c97585ad9d277137f0f04ae99f55edd0fd6b8e0bc183707f",
+      "baseline_sha256": "38111f83d4020a0b736778493f8ad7bbd127bbe31cc762164ed5c78ca6682253"
+    },
+    {
+      "path": "tests/browser.test.cjs",
+      "action": "replace",
+      "bytes": 3426,
+      "sha256": "e665c83b97e5d8db6416e7501d5303155f1ba8535b6ce1cf412309a051604262",
+      "baseline_sha256": "dd381e0f42e00f90068ef65b3a8ad8b8e44209bd92790400777335af8e6aa27b"
+    },
+    {
+      "path": "tests/helpers/launch-harness.cjs",
+      "action": "replace",
+      "bytes": 7146,
+      "sha256": "f0cccc2efaa7c6864ee254a967497cf3f05cb3e7b615b8095413fb2d393b6953",
+      "baseline_sha256": "6e074fe7d102419bb5d89007947c51874ea2286879347adafbf844cef44d33fb"
+    },
+    {
+      "path": "tests/helpers/managed-profile.cjs",
+      "action": "add",
+      "bytes": 770,
+      "sha256": "23d6aefdde12e57598085d9a95e08782fee0409b88b868c917c9e36bf2ddbdae",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/helpers/render-setup-preview.cjs",
+      "action": "add",
+      "bytes": 2836,
+      "sha256": "3663badc390c2acefcb94a700245e7b3c1595c283f8d3404d14445134c03ae9c",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/helpers/ui.cjs",
+      "action": "replace",
+      "bytes": 3021,
+      "sha256": "7e6cb2ddc67e81b0ec0aad17f7fe7fabe399e2c1992829a1ebaa3843ac21e4f6",
+      "baseline_sha256": "8a2b34f7f705b2880a740b1e4e9a4a03fe5ff61dd5b35ed9a2f1f294a77faeec"
+    },
+    {
+      "path": "tests/mounts.test.cjs",
+      "action": "replace",
+      "bytes": 6850,
+      "sha256": "685c0bf9f20d3b378d6233808926eba8e287984d7bed4b97733af04a06fc3a69",
+      "baseline_sha256": "f922fd1701f2becc9645f1a35989935cda2ae39ebf96cd971423425d82b7f386"
+    },
+    {
+      "path": "tests/native/setup.cjs",
+      "action": "add",
+      "bytes": 5436,
+      "sha256": "2ba2e7161b935c80f0eadc3a8a2d897e98659a27b3feb4d4074426ca38edb5b2",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/preferences.test.cjs",
+      "action": "replace",
+      "bytes": 6348,
+      "sha256": "8462a2826666791f3adcae9ab3546d74b797cfd7fdd7fb1409a25c25d181503b",
+      "baseline_sha256": "b5e2a434b05a64bc3b0c7e9302be790d1ad9a026e60ce18b1899fe0dee294f9a"
+    },
+    {
+      "path": "tests/register.cjs",
+      "action": "replace",
+      "bytes": 529,
+      "sha256": "c9dd0b886ac4e6a8914553971e785b3938962a76829807cad3763439e8ccd667",
+      "baseline_sha256": "590e71d8314ad790f261d7eedfc950db53952e4f5dad7ec511c2257b4e79ceb0"
+    },
+    {
+      "path": "tests/setup-connections.test.cjs",
+      "action": "add",
+      "bytes": 7239,
+      "sha256": "056d89129e6fcd466de2b38b972163e9b79af1561d80f78befcf4146cea5340a",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-dependencies.test.cjs",
+      "action": "add",
+      "bytes": 2512,
+      "sha256": "e1b5fe2144d92cd6e975116f3b3365546e3ef9b2be3a9f1a71b555cf68c3e8a1",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-ipc.test.cjs",
+      "action": "add",
+      "bytes": 2189,
+      "sha256": "a7913e9800e4407a7f7dfb1fb092995b0d4b01e8064c03c65f24547e90a6fac7",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-packaging.test.cjs",
+      "action": "add",
+      "bytes": 4300,
+      "sha256": "f78068af08c6c2db969877425e211181cd180cee086af495d878cf87dfb3e073",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-process.test.cjs",
+      "action": "add",
+      "bytes": 937,
+      "sha256": "f317efa9ee639f97b05043455675c64a9a674808c3a3213ab46ea6256782003f",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-runtime.test.cjs",
+      "action": "add",
+      "bytes": 3279,
+      "sha256": "c90d301d5c18dec8bdc12240fdf144d3abfb4e92657d44dc5cbb501c1fe30d18",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/setup-ui.test.cjs",
+      "action": "add",
+      "bytes": 3176,
+      "sha256": "161006b060639d9901a6f83fd3bcd73d7fa7f1b0fa7c5edf6b32535b0acb9a3f",
+      "baseline_sha256": null
+    },
+    {
+      "path": "tests/window.test.cjs",
+      "action": "replace",
+      "bytes": 7444,
+      "sha256": "e1f2b8351adfdbcd83c3ade8998109aefa48a0bb48dbc1a3e95f003f306a4c8d",
+      "baseline_sha256": "eb9166464c6fedca21c764c618150d3d3f9ccfc01c7bed94f7ca9e4119cbbe34"
+    }
+  ]
+}

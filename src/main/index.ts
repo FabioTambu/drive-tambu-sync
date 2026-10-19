@@ -7,7 +7,11 @@ import { MountManager, checkMountDestination } from './mounts'
 import { BackupManager } from './backups'
 import { OperationCoordinator } from './operations'
 import type { PreflightResult } from './preflight'
-import { checkRemoteDirectory, diagnostics, errorDetails, listRemoteDirectories } from './diagnostics'
+import { checkRemoteDirectory, diagnostics, errorDetails, listRemoteDirectories, resolveRcloneExecutable, runRclone } from './diagnostics'
+import { ConnectionSetup } from './setup-connections'
+import { configureConnectionProfiles } from './connection-profiles'
+import { configureRuntimeTools } from './runtime-tools'
+import { inspectComponents, installComponents } from './setup-dependencies'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
 import { requestedFolder, forwardedShortcutArguments, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
@@ -23,6 +27,8 @@ let exiting = false
 let cleanupStarted = false
 let operations: OperationCoordinator
 let pendingSaves = 0
+let connectionSetup: ConnectionSetup
+let setupBusy = false
 let nativeDialogDepth = 0
 let mode: WindowMode = 'compact'
 const logLines: string[] = []
@@ -40,7 +46,7 @@ function changed(): void {
 }
 function snapshot(): Snapshot {
   return {
-    appVersion: app.getVersion(), platform: process.platform, windowMode: mode,
+    setupBusy, appVersion: app.getVersion(), platform: process.platform, windowMode: mode,
     dark: nativeTheme.shouldUseDarkColors, settings: store.settings, operation: operations?.view ?? null,
     mounts: store.mounts.map(m => ({ ...m, hasRuntime: mounts.hasRuntime(m.id), status: mounts.state(m.id).status, statusDetail: mounts.state(m.id).detail,
       backupStatus: backups.state(m.id).status, backupDetail: backups.state(m.id).detail,
@@ -160,9 +166,25 @@ function validateRequestId(value: string): void {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9-]{12,80}$/.test(value)) throw new Error('Richiesta non valida.')
 }
 function requireIdle(): void {
-  if (operations?.busy || cleanupStarted) throw new Error('Completa o annulla prima l\'operazione aperta.')
+  if (operations?.busy || cleanupStarted || exiting || setupBusy) throw new Error('Completa o annulla prima l\'operazione aperta.')
+}
+async function withSetup<T>(action: () => Promise<T>, installing = false): Promise<T> {
+  requireIdle()
+  if (pendingSaves > 0) throw new Error('Attendi la verifica della cartella prima di configurare i componenti.')
+  if (installing && store.mounts.some(m => mounts.hasRuntime(m.id) || mounts.state(m.id).status !== 'disconnected' || backups.state(m.id).status === 'running')) {
+    throw new Error('Scollega prima le cartelle e attendi la fine dei backup. I componenti non vengono modificati con collegamenti attivi.')
+  }
+  setupBusy = true
+  backups.pauseScheduling(); changed()
+  try { return await action() }
+  finally {
+    setupBusy = false
+    if (!operations.busy && !cleanupStarted) backups.resumeScheduling()
+    changed()
+  }
 }
 async function inspectWork(ids: string[]): Promise<PreflightResult> {
+  if (setupBusy) return {kind:'blocked', message:'La configurazione o installazione dei componenti e in corso. Attendi la fine oppure continua in background.'}
   if (pendingSaves > 0) return {kind:'blocked', message:'Sto ancora verificando una modifica alle cartelle. Attendi e riprova.'}
   for (const id of ids) {
     const m = store.find(id)
@@ -174,13 +196,14 @@ async function inspectWork(ids: string[]): Promise<PreflightResult> {
 }
 function requestQuit(): Promise<boolean> {
   const ids = store.mounts.map(m => m.id)
-  const requiresConfirmation = ids.some(id => mounts.hasRuntime(id) || mounts.state(id).status !== 'disconnected' || backups.state(id).status === 'running')
+  const requiresConfirmation = setupBusy || ids.some(id => mounts.hasRuntime(id) || mounts.state(id).status !== 'disconnected' || backups.state(id).status === 'running')
   const promise = operations.run({kind:'quit', requiresConfirmation}, () => inspectWork(ids), async () => {
     cleanupStarted = true
     try {
       for (const controller of browsing.values()) controller.abort()
       for (const id of ids) await mounts.disconnect(id)
       backups.stop()
+      connectionSetup.dispose()
       exiting = true
       app.quit()
     } finally { cleanupStarted = false }
@@ -252,6 +275,25 @@ function registerHandlers(): void {
   })
   ipcMain.handle('drive:snapshot', e => { guard(e); return snapshot() })
   ipcMain.handle('drive:diagnostics', e => { guard(e); return diagnostics(store) })
+  ipcMain.handle('drive:setupReport', e => { guard(e); return inspectComponents(resolveRcloneExecutable(store.settings.rcloneExecutable)) })
+  ipcMain.handle('drive:installComponents', e => { guard(e); return withSetup(() => installComponents(resolveRcloneExecutable(store.settings.rcloneExecutable)), true) })
+  ipcMain.handle('drive:prepareConnection', (e, draft: unknown) => { guard(e); return withSetup(() => connectionSetup.prepare(draft)) })
+  ipcMain.handle('drive:saveConnection', (e, token: string, confirmed: boolean) => {
+    guard(e)
+    if (typeof token !== 'string' || typeof confirmed !== 'boolean') throw new Error('Conferma della connessione non valida.')
+    return withSetup(() => connectionSetup.finish(token, confirmed))
+  })
+  ipcMain.handle('drive:cancelConnection', (e, token: string) => {
+    guard(e)
+    if (typeof token !== 'string') throw new Error('Richiesta non valida.')
+    return withSetup(async () => { connectionSetup.cancel(token) })
+  })
+  ipcMain.handle('drive:cloudflareLogin', (e, host: string) => { guard(e); return withSetup(() => connectionSetup.login(host)) })
+  ipcMain.handle('drive:chooseSshKey', async e => {
+    guard(e); requireIdle()
+    const result = await withDialog(() => dialog.showOpenDialog(window!, {title:'Scegli una chiave SSH esistente', properties:['openFile']}))
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
   ipcMain.handle('drive:setWindowMode', (e, next: WindowMode) => { guard(e); setMode(next) })
   ipcMain.handle('drive:hideWindow', e => { guard(e); if (operations.busy || store.settings.closeToTray) hideWindow(); else app.quit() })
   ipcMain.handle('drive:minimizeWindow', e => { guard(e); window?.minimize() })
@@ -409,14 +451,21 @@ app.whenReady().then(() => {
       handleShortcut(argv, true, additionalData)
     })
     store = new ConfigStore()
+    configureRuntimeTools(app.isPackaged ? path.join(process.resourcesPath,'vendor') : path.join(app.getAppPath(),'resources','vendor',`${process.platform}-${process.arch}`))
+    const profileRoot = path.join(app.getPath('userData'),'connections-v1')
+    configureConnectionProfiles(profileRoot)
+    connectionSetup = new ConnectionSetup(profileRoot, {
+      rclone: () => resolveRcloneExecutable(store.settings.rcloneExecutable),
+      existingNames: async () => (await runRclone(store.settings.rcloneExecutable,['listremotes'],9000)).split(/\r?\n/).map(r=>r.trim().replace(/:$/,'')).filter(Boolean)
+    })
     mounts = new MountManager(store, changed, log)
     backups = new BackupManager(store, changed, log)
     operations = new OperationCoordinator({
-      changed, pause: () => backups.pauseScheduling(), resume: () => backups.resumeScheduling(), hide: hideWindow
+      changed, pause: () => backups.pauseScheduling(), resume: () => { if (!setupBusy) backups.resumeScheduling() }, hide: hideWindow
     })
     folderOpener = new SavedFolderOpener({
       find: id => store.find(id), state: id => mounts.state(id), connect: id => mounts.connect(id),
-      open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted || operations.busy
+      open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted || operations.busy || setupBusy
     })
     applyTheme()
     nativeTheme.on('updated', () => {
@@ -430,7 +479,7 @@ app.whenReady().then(() => {
     screen.on('display-metrics-changed', () => { if (mode === 'compact') positionWindow() })
     screen.on('display-removed', positionWindow)
     for (const m of store.mounts.filter(x => x.autoConnect)) setTimeout(() => {
-      if (!exiting && !cleanupStarted && !operations.busy) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
+      if (!exiting && !cleanupStarted && !operations.busy && !setupBusy) void mounts.connect(m.id).catch(error => log(`${m.name}: ${errorDetails(error)}`))
     }, 1800)
     log('Drive Tambu avviato')
     handleShortcut(startupArgv)

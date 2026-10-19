@@ -1,3 +1,5 @@
+import type { ConnectionDraft, ManagedConnection, PreparedConnection, SetupReport } from './setup'
+
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error'
 export type Theme = 'system' | 'light' | 'dark'
 export type WindowMode = 'compact' | 'expanded'
@@ -69,6 +71,7 @@ export interface MountView extends MountConfig {
 }
 
 export interface Snapshot {
+  setupBusy?: boolean
   appVersion: string
   platform: string
   windowMode: WindowMode
@@ -82,6 +85,7 @@ export interface Snapshot {
 export interface Dependencies {
   rclone: { ok: boolean; detail: string }
   remotes: string[]
+  remoteLabels?: Record<string, string>
   note: string
   connectionError?: string
 }
@@ -94,6 +98,13 @@ export interface RemoteListing {
 }
 
 export interface DriveAPI {
+  setupReport(): Promise<SetupReport>
+  installComponents(): Promise<SetupReport>
+  chooseSshKey(): Promise<string | null>
+  prepareConnection(draft: ConnectionDraft): Promise<PreparedConnection>
+  saveConnection(token: string, confirmed: boolean): Promise<ManagedConnection>
+  cancelConnection(token: string): Promise<void>
+  cloudflareLogin(host: string): Promise<void>
   snapshot(): Promise<Snapshot>
   diagnostics(): Promise<Dependencies>
   chooseDirectory(name?: string): Promise<string | null>

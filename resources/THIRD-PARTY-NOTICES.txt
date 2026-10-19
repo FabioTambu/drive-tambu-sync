@@ -1,0 +1,18 @@
+Drive Tambu - unmodified external native components
+
+rclone 1.74.4 - Nick Craig-Wood and contributors. MIT license.
+Source: https://github.com/rclone/rclone/tree/v1.74.4
+Distribution and signed checksums: https://downloads.rclone.org/v1.74.4/
+
+cloudflared 2026.10.1 - Cloudflare, Inc. Apache License 2.0.
+Source: https://github.com/cloudflare/cloudflared/tree/2026.10.1
+Distribution: https://github.com/cloudflare/cloudflared/releases/tag/2026.10.1
+
+WinFsp 2.1.25156 (Windows installer only) - Navimatics LLC / Bill Zissimopoulos.
+The original signed MSI is distributed unchanged. Its own license and setup apply.
+Source and licensing: https://github.com/winfsp/winfsp/tree/v2.1
+Distribution: https://github.com/winfsp/winfsp/releases/tag/v2.1
+
+Original licenses are included in the adjacent licenses directory during packaging.
+OpenSSH and FUSE are installed from the operating system, not replaced by this app.
+Drive Tambu does not fork, relink, or modify these components.

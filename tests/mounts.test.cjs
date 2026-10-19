@@ -52,3 +52,8 @@ test('an app-created empty Linux mount directory remains owned after reconnect',
  await manager.connect(m.id);await manager.disconnect(m.id);manager.cleanupOwnedDirectory(m.id)
  assert.equal(fs.existsSync(m.localPath),false)
 })
+test('managed mount daemon uses the same private configuration as its preflight',async t=>{
+ const p=require('./helpers/managed-profile.cjs')(t),{manager,m}=setup();m.remote=p.remote
+ await manager.connect(m.id)
+ try{for(const cmd of commands.filter(a=>['rcd','lsjson'].includes(a[0])))assert.equal(cmd[cmd.indexOf('--config')+1],p.config)}finally{await manager.disconnect(m.id)}
+})

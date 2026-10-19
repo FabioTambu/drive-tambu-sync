@@ -1,0 +1,35 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path')
+const file=path.join(__dirname,'../src/main/runtime-tools.ts')
+function runtime(){assert.ok(fs.existsSync(file),'runtime-tools is implemented');return require(file)}
+test('setup rejects old or unrecognizable rclone versions, including Mint 1.60.1-DEV',()=>{
+ const {compatibleRclone}=runtime(); assert.equal(compatibleRclone('rclone v1.60.1-DEV'),false);assert.equal(compatibleRclone('garbage'),false)
+ for(const v of ['rclone v1.64.0','rclone v1.74.2','rclone v2.0.0'])assert.equal(compatibleRclone(v),true)
+})
+test('bundled tools win over PATH defaults but never override a selected custom rclone',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dt tools '));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}))
+ const r=runtime();r.configureRuntimeTools(dir);t.after(()=>r.configureRuntimeTools(undefined))
+ const name=process.platform==='win32'?'rclone.exe':'rclone';fs.writeFileSync(path.join(dir,name),'test')
+ assert.equal(r.bundledTool('rclone'),path.join(dir,name));assert.equal(r.selectRclone('rclone'),path.join(dir,name));assert.equal(r.selectRclone('/custom/rclone'),'/custom/rclone')
+ const env=r.runtimeEnvironment({PATH:'/original',SAMPLE:'preserved'});assert.equal(env.SAMPLE,'preserved');assert.ok(env.PATH.startsWith(dir+path.delimiter));assert.ok(env.PATH.endsWith('/original'))
+})
+test('native install plan is allowlisted and never apt-installs outdated rclone',()=>{
+ const f=path.join(__dirname,'../src/main/setup-dependencies.ts');assert.ok(fs.existsSync(f),'setup-dependencies is implemented');const {linuxInstallPlan}=require(f)
+ const p=linuxInstallPlan('ID=linuxmint\nID_LIKE="ubuntu debian"',['ssh','filesystem'])
+ assert.equal(p.executable,'/usr/bin/pkexec');assert.deepEqual(p.args,['/usr/bin/apt-get','--assume-yes','--no-remove','install','fuse3','openssh-client'])
+ assert.throws(()=>linuxInstallPlan('ID=arch',['filesystem']),/supportata|supportato/i)
+ assert.throws(()=>linuxInstallPlan('ID=ubuntu',['rclone']),/componente/i)
+ assert.throws(()=>linuxInstallPlan('ID=ubuntu',['filesystem; touch /tmp/oops']),/componente/i)
+})
+test('Windows installer command asks for elevation and never takes commands from the renderer',()=>{
+ const {windowsInstallScript}=require('../src/main/setup-dependencies.ts')
+ const s=windowsInstallScript(['ssh','filesystem'],'C:\\Program Files\\Drive Tambu\\vendor\\winfsp.msi')
+ assert.match(s,/Add-WindowsCapability/);assert.match(s,/OpenSSH\.Client~~~~0\.0\.1\.0/);assert.match(s,/Get-FileHash/);assert.match(s,/073a70e0/i)
+ assert.match(s,/norestart/);assert.doesNotMatch(s,/Restart-Computer|Invoke-Expression|DownloadString|taskkill/i)
+ assert.throws(()=>windowsInstallScript(['other'],'C:\\a.msi'),/componente/i)
+})
+test('elevated MSI verification holds a read-only sharing lock through installation',()=>{
+ const {windowsInstallScript}=require('../src/main/setup-dependencies.ts'),s=windowsInstallScript(['filesystem'],'C:\\Program Files\\Drive Tambu\\winfsp.msi')
+ assert.match(s,/\[System\.IO\.File\]::Open/);assert.match(s,/FileShare\]::Read/)
+ assert.ok(s.indexOf('[System.IO.File]::Open')<s.indexOf('Get-FileHash'))
+ assert.match(s,/finally.*Dispose/s)
+})

@@ -1,3 +1,32 @@
+# Drive Tambu 0.5.0
+
+Connessione guidata SSH/SFTP dall'app, rclone e cloudflared ufficiali inclusi nel pacchetto, installazione autorizzata dei componenti di sistema mancanti.
+
+**Istruzioni correnti:** [aggiornamento e primo avvio](AGGIORNAMENTO-0.5.0.md). **Stato delle verifiche:** [rapporto 0.5.0](docs/VERIFICA-0.5.0.md). La patch dei sorgenti non equivale a un installer compilato o a un collaudo nativo riuscito.
+
+Windows e Linux x64. Per installazioni nuove su Mint/Ubuntu/Debian preferire il `.deb`. Rclone e cloudflared vengono scaricati durante la build con versioni e SHA256 fissati, senza modificare quelli del sistema. L'installazione di WinFsp/FUSE/OpenSSH richiede il consenso del sistema operativo quando necessario. Le connessioni e le chiavi esistenti restano al loro posto.
+
+Il wizard offre host SSH esistente, SSH diretto e Cloudflare Tunnel. Usa chiavi già autorizzate o un agente funzionante; non crea chiavi, non modifica il server e non memorizza password SSH. Le nuove connessioni restano private dell'app e vengono elencate solo dopo il controllo SFTP.
+
+## Sviluppo e build della 0.5.0
+
+```text
+npm install
+npm test
+npm run typecheck
+npm run dev
+npm run dist:win
+npm run dist:linux
+```
+
+Eseguire il comando dist sul relativo sistema. Per preparare i componenti nativi durante lo sviluppo: `npm run prepare:vendor`. Le distribuzioni verificano il bundle anche dopo il confezionamento. In GitHub Actions il test SFTP nativo deve riuscire prima dell'upload degli installer; non eseguire il test usa-e-getta sulle macchine personali.
+
+## Documentazione storica conservata (fino alla 0.4.1)
+
+La parte seguente descrive versioni precedenti. Le indicazioni sui componenti da installare manualmente e le dichiarazioni dei vecchi ambienti di build non sostituiscono le istruzioni e il rapporto 0.5.0 qui sopra.
+
+---
+
 > Patch 0.4.1: collegamenti con apertura silenziosa del pannello e argomenti corretti. Vedi [istruzioni](AGGIORNAMENTO-0.4.1.md) e [verifiche](docs/VERIFICA-0.4.1.md).
 
 > Aggiornamento 0.4.0: controlli prima di uscita/disconnessione, cambio posizione e reset facoltativo delle preferenze. Vedi [istruzioni](AGGIORNAMENTO-0.4.md) e [verifiche e limiti](docs/VERIFICA-0.4.md). Nessun fork di rclone.

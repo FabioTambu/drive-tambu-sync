@@ -5,6 +5,8 @@ import { ConfigStore, validateMount } from './store'
 import { remoteSpec, runRclone, resolveRcloneExecutable, READ_FLAGS, SFTP_FLAGS, errorDetails } from './diagnostics'
 import type { BackupStatus, MountConfig, BackupProgress } from '../shared/types'
 import { isBackupDue } from '../shared/schedule'
+import { managedRemoteFlags } from './connection-profiles'
+import { runtimeEnvironment } from './runtime-tools'
 import { JsonLogReader, progressFromStats } from './backup-progress'
 
 interface Job { state: BackupStatus; detail: string; progress?: BackupProgress; process?: ChildProcess; abort?: AbortController }
@@ -114,7 +116,7 @@ export class BackupManager {
     this.changed()
     try {
       this.store.markBackupStarted(id)
-      const firstLevel = await runRclone(this.store.settings.rcloneExecutable, ['lsf', source, '--max-depth', '1', ...READ_FLAGS], 45000, job.abort?.signal)
+      const firstLevel = await runRclone(this.store.settings.rcloneExecutable, ['lsf', source, '--max-depth', '1', ...READ_FLAGS, ...managedRemoteFlags(m.remote)], 45000, job.abort?.signal)
       // Never mirror an unexpectedly empty source over an existing local backup.
       if (!firstLevel.trim() && existsSync(current) && readdirSync(current).length > 0) {
         throw new Error('La sorgente remota risulta vuota. Backup bloccato per proteggere i file locali.')
@@ -128,10 +130,10 @@ export class BackupManager {
         '--backup-dir', archive,
         '--delete-after',
         '--log-level', 'NOTICE',
-        '--stats', '1s', '--stats-log-level', 'NOTICE', '--use-json-log', ...SFTP_FLAGS
+        '--stats', '1s', '--stats-log-level', 'NOTICE', '--use-json-log', ...SFTP_FLAGS, ...managedRemoteFlags(m.remote)
       ]
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
+        const proc = spawn(resolveRcloneExecutable(this.store.settings.rcloneExecutable), args, { env: runtimeEnvironment(), shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
         job.process = proc
         job.detail = 'Copia e archiviazione in corso...'
         this.changed()

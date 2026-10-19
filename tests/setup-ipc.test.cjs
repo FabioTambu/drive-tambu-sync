@@ -1,0 +1,25 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
+const {launchHarness}=require('./helpers/launch-harness.cjs')
+function installed(){assert.match(fs.readFileSync(path.join(__dirname,'../src/main/index.ts'),'utf8'),/drive:prepareConnection/,'setup IPC is implemented')}
+test('component installation refuses to run with an active mount',async t=>{
+ installed();const h=await launchHarness(t);await assert.rejects(h.invoke('drive:installComponents'),/Scollega|collegamenti/i)
+})
+test('setup validates commands and stale tokens in main and releases its busy state after failure',async t=>{
+ installed();const h=await launchHarness(t,{status:'disconnected'})
+ await assert.rejects(h.invoke('drive:prepareConnection',{name:'Casa',mode:'existing',host:'-oProxyCommand=oops',user:'',port:22,keyPath:''}),/host|indirizzo/i)
+ assert.equal(h.snapshot().setupBusy,false)
+ await assert.rejects(h.invoke('drive:saveConnection','not-a-token',true),/valida|scaduta/i)
+ assert.equal(h.snapshot().setupBusy,false)
+})
+test('setup blocks concurrent changes and quitting; background cannot resume scheduling prematurely',async t=>{
+ let finish;const result=new Promise(resolve=>{finish=resolve})
+ const h=await launchHarness(t,{status:'disconnected',runRclone:async()=>'',runSetup:async()=>result})
+ const preparing=h.invoke('drive:prepareConnection',{name:'New server',mode:'existing',host:'host.example',user:'',port:22,keyPath:''})
+ await h.settle();assert.equal(h.snapshot().setupBusy,true)
+ await assert.rejects(h.invoke('drive:connect',h.id),/Completa|operazione/)
+ await assert.rejects(h.invoke('drive:installComponents'),/Completa|operazione/)
+ h.app.quit();await h.settle();assert.equal(h.calls.quits,0);assert.equal(h.snapshot().operation.phase,'blocked')
+ await h.invoke('drive:respondToOperation',h.snapshot().operation.id,'background');assert.equal(h.calls.resumed,0,'background keeps scheduling paused during setup')
+ finish({code:0,stdout:'{"IsDir":true}',stderr:''});const token=await preparing;assert.equal(h.snapshot().setupBusy,false);assert.equal(h.calls.resumed,1)
+ await h.invoke('drive:cancelConnection',token.token)
+})

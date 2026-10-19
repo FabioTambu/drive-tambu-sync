@@ -1,3 +1,5 @@
+import { Dialog } from './Dialog'
+import { SetupWizard } from './SetupWizard'
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
@@ -86,35 +88,6 @@ function ErrorBox({message}: {message: string}): ReactNode {
   return message ? <div className="error-box" role="alert"><CircleAlert size={17}/><span>{message}</span></div> : null
 }
 
-function Dialog({title, subtitle, children, onClose, busy = false}: {title: string; subtitle?: string; children: ReactNode; onClose: () => void; busy?: boolean}): ReactNode {
-  const ref = useRef<HTMLDivElement>(null)
-  const closeRef = useRef(onClose); closeRef.current = onClose
-  const busyRef = useRef(busy); busyRef.current = busy
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
-    const first = ref.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled), select:not(:disabled)')
-    first?.focus()
-    const keyboard = (event: KeyboardEvent): void => {
-      const dialogs = document.querySelectorAll('[role="dialog"]')
-      if (dialogs[dialogs.length - 1] !== ref.current) return
-      if (event.key === 'Escape' && !busyRef.current) { event.preventDefault(); closeRef.current(); return }
-      if (event.key !== 'Tab') return
-      const focusable = Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]') ?? []).filter(el => el.offsetParent !== null)
-      if (!focusable.length) { event.preventDefault(); ref.current?.focus(); return }
-      const firstElement = focusable[0], lastElement = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === firstElement) { event.preventDefault(); lastElement.focus() }
-      else if (!event.shiftKey && document.activeElement === lastElement) { event.preventDefault(); firstElement.focus() }
-    }
-    document.addEventListener('keydown', keyboard)
-    return () => { document.removeEventListener('keydown', keyboard); previous?.focus() }
-  }, [])
-  return <div className="modal-scrim" onMouseDown={event => { if (!busy && event.target === event.currentTarget) onClose() }}>
-    <section ref={ref} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={title}>
-      <header className="modal-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><Button kind="ghost" title="Chiudi finestra di dialogo" disabled={busy} onClick={onClose}><X size={18}/></Button></header>
-      {children}
-    </section>
-  </div>
-}
 
 function OperationDialog({operation, onReply}: {operation: OperationView; onReply: (reply: OperationReply) => void | Promise<unknown>}): ReactNode {
   const working = operation.phase === 'working', checking = operation.phase === 'checking', blocked = operation.phase === 'blocked'
@@ -141,7 +114,7 @@ function OperationDialog({operation, onReply}: {operation: OperationView; onRepl
   </Dialog>
 }
 
-function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string; initialPath: string; onChoose: (path: string) => void; onClose: () => void}): ReactNode {
+function RemoteBrowser({remote, name, initialPath, onChoose, onClose}: {remote: string; name?: string; initialPath: string; onChoose: (path: string) => void; onClose: () => void}): ReactNode {
   const [listing, setListing] = useState<RemoteListing | null>(null)
   const [input, setInput] = useState(() => displayRemotePath(initialPath))
   const [loading, setLoading] = useState(false)
@@ -172,7 +145,7 @@ function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string
     }
   }, [load, initialPath])
   const visible = listing?.entries.filter(item => item.name.toLocaleLowerCase('it').includes(filter.toLocaleLowerCase('it'))) ?? []
-  return <Dialog title="Scegli una cartella sul server" subtitle={serverName(remote)} onClose={onClose}>
+  return <Dialog title="Scegli una cartella sul server" subtitle={serverName(name || remote)} onClose={onClose}>
     <div className="modal-body remote-body">
       <div className="browser-toolbar">
         <Button title="Cartella personale sul server" onClick={() => load('')}><Home size={16}/> Home</Button>
@@ -200,8 +173,8 @@ function RemoteBrowser({remote, initialPath, onChoose, onClose}: {remote: string
   </Dialog>
 }
 
-function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, defaultRefreshSeconds = DEFAULT_REFRESH_SECONDS}: {
-  original: MountConfig; remotes: string[]; defaultRefreshSeconds?: number; platform?: string; onClose: () => void;
+function MountModal({original, remotes, remoteLabels = {}, onClose, onSave, onDelete, onSettings, defaultRefreshSeconds = DEFAULT_REFRESH_SECONDS}: {
+  original: MountConfig; remotes: string[]; remoteLabels?: Record<string,string>; defaultRefreshSeconds?: number; platform?: string; onClose: () => void;
   onSave: (m: MountConfig) => Promise<void>; onDelete: (id: string) => Promise<boolean>; onSettings: () => void;
   notify?: (text: string, type?: 'success' | 'error') => void; apiBusy?: boolean
 }): ReactNode {
@@ -240,8 +213,8 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
           <ErrorBox message={error}/>
           {remotes.length === 0 && <div className="info-box"><Server size={19}/><div><strong>Nessun server disponibile</strong><p>Apri le Impostazioni per rilevare le connessioni salvate.</p><Button onClick={onSettings}>Apri Impostazioni</Button></div></div>}
           <Field label="Nome cartella"><input required aria-label="Nome cartella" maxLength={80} placeholder="Per esempio, Documenti" value={m.name} disabled={saving} onChange={event => patch('name', event.target.value)}/></Field>
-          {remotes.length > 1 ? <Field label="Server"><select required aria-label="Server" value={m.remote} disabled={saving || pathLocked} onChange={event => {patch('remote', event.target.value); patch('remotePath', '')}}><option value="" disabled>Scegli il server</option>{remotes.map(remote => <option key={remote} value={remote}>{serverName(remote)}</option>)}</select></Field>
-            : m.remote && <div className="server-chip"><Server size={15}/><span>Server: <strong>{serverName(m.remote)}</strong></span></div>}
+          {remotes.length > 1 ? <Field label="Server"><select required aria-label="Server" value={m.remote} disabled={saving || pathLocked} onChange={event => {patch('remote', event.target.value); patch('remotePath', '')}}><option value="" disabled>Scegli il server</option>{remotes.map(remote => <option key={remote} value={remote}>{serverName(remoteLabels[remote] || remote)}</option>)}</select></Field>
+            : m.remote && <div className="server-chip"><Server size={15}/><span>Server: <strong>{serverName(remoteLabels[m.remote] || m.remote)}</strong></span></div>}
           {pathLocked && <p className="field-hint">Puoi cambiare la posizione sul computer: al salvataggio ti verra chiesta conferma. Per cambiare il percorso sul server, scollega prima la cartella.</p>}
           <Field label="Cartella sul server" detail="Usa Sfoglia oppure incolla il percorso completo. Il nome del server viene riconosciuto automaticamente.">
             <div className="input-with-button"><input aria-label="Cartella sul server" disabled={saving || pathLocked} spellCheck={false} value={m.remotePath} placeholder="Home del server" onChange={event => patch('remotePath', event.target.value)} onBlur={() => {
@@ -272,7 +245,7 @@ function MountModal({original, remotes, onClose, onSave, onDelete, onSettings, d
         <footer className="modal-foot"><div className="foot-spacer">{!isNew && <Button kind="ghost" disabled={saving} onClick={async () => {setSaving(true); setError(''); try {await onDelete(m.id)} catch (failure) {setError(messageOf(failure))} finally {setSaving(false)}}}><Trash2 size={16}/><span className="hide-narrow">Rimuovi</span></Button>}</div><Button onClick={onClose} disabled={saving}>Annulla</Button><button type="submit" className="button button-primary" disabled={saving || !m.remote || remotes.length === 0}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} {saving ? 'Verifico e salvo...' : 'Salva cartella'}</button></footer>
       </form>
     </Dialog>
-    {browser && <RemoteBrowser remote={m.remote} initialPath={m.remotePath} onClose={() => setBrowser(false)} onChoose={value => {patch('remotePath', value); setBrowser(false)}}/>}
+    {browser && <RemoteBrowser remote={m.remote} name={remoteLabels[m.remote]} initialPath={m.remotePath} onClose={() => setBrowser(false)} onChoose={value => {patch('remotePath', value); setBrowser(false)}}/>}
   </>
 }
 
@@ -297,7 +270,7 @@ function MountCard({m, busy, onEdit, onOpen, onToggle, onBackup, onOpenBackup}: 
   </article>
 }
 
-function SettingsPage({snapshot, deps, onSave, onCheck, busy}: {snapshot: Snapshot; deps: Dependencies | null; onSave: (s: AppSettings) => Promise<void>; onCheck: () => void; busy: boolean}): ReactNode {
+function SettingsPage({snapshot, deps, onSave, onCheck, onSetup, busy}: {snapshot: Snapshot; deps: Dependencies | null; onSave: (s: AppSettings) => Promise<void>; onCheck: () => void; onSetup?: () => void; busy: boolean}): ReactNode {
   const [executable, setExecutable] = useState(snapshot.settings.rcloneExecutable)
   const [cache, setCache] = useState(snapshot.settings.cacheMaxSize)
   const [refresh, setRefresh] = useState(snapshot.settings.directoryRefreshSeconds ?? DEFAULT_REFRESH_SECONDS)
@@ -327,12 +300,13 @@ function SettingsPage({snapshot, deps, onSave, onCheck, busy}: {snapshot: Snapsh
     {value: 'dark', label: 'Scuro', aria: 'Tema scuro', icon: <Moon size={18}/>}
   ]
   return <div className="page-block settings-page"><div className="page-heading"><span className="eyebrow">A MODO TUO</span><h1>Impostazioni</h1><p>Connessione, aspetto e preferenze.</p></div>
-    <section className="settings-panel"><div className="section-title"><Server size={21}/><div><h2>Il tuo server</h2><p>{remote ? `${serverName(remote)} e gia salvato su questo computer.` : 'Rileva e scegli una connessione salvata.'}</p></div></div>
+    <section className="settings-panel"><div className="section-title"><Server size={21}/><div><h2>Il tuo server</h2><p>{remote ? `${serverName(deps?.remoteLabels?.[remote] || remote)} e gia salvato su questo computer.` : 'Rileva e scegli una connessione salvata.'}</p></div></div>
       {deps?.remotes.length ? <>
-        {deps.remotes.length > 1 && <Field label="Server predefinito"><select aria-label="Server predefinito" disabled={busy} value={snapshot.settings.defaultRemote} onChange={event => void update({defaultRemote: event.target.value}).catch(() => {})}><option value="">Scegli ogni volta</option>{deps.remotes.map(r => <option key={r} value={r}>{serverName(r)}</option>)}</select></Field>}
+        {deps.remotes.length > 1 && <Field label="Server predefinito"><select aria-label="Server predefinito" disabled={busy} value={snapshot.settings.defaultRemote} onChange={event => void update({defaultRemote: event.target.value}).catch(() => {})}><option value="">Scegli ogni volta</option>{deps.remotes.map(r => <option key={r} value={r}>{serverName(deps?.remoteLabels?.[r] || r)}</option>)}</select></Field>}
         <p className="field-hint">Le impostazioni di accesso gia presenti vengono riutilizzate. Nessuna chiave viene caricata su GitHub.</p>
         <div className="button-row"><Button kind="primary" disabled={!remote || checking || busy} onClick={check}>{checking ? <LoaderCircle className="spin" size={16}/> : <ShieldCheck size={16}/>} {checking ? 'Verifico...' : 'Verifica connessione'}</Button><Button disabled={checking} onClick={() => {setResult(''); setError(''); onCheck()}}><RefreshCw size={15}/> Rileva di nuovo</Button></div>
       </> : <><p className="muted">{deps?.connectionError || (deps && !deps.rclone.ok ? deps.rclone.detail : 'Non ho trovato connessioni salvate. Riprova il rilevamento oppure controlla le opzioni avanzate.')}</p><Button disabled={busy} onClick={onCheck}><RefreshCw size={15}/> Rileva di nuovo</Button></>}
+      {onSetup && <div className="button-row"><Button onClick={onSetup} disabled={busy}><Plus size={16}/> Configura connessione e componenti</Button></div>}
       {result && <div className="success-box" role="status"><CircleCheck size={17}/>{result}</div>}<ErrorBox message={error}/>
     </section>
     <section className="settings-panel"><div className="section-title"><Sun size={21}/><div><h2>Aspetto</h2><p>Il tema si applica subito e viene ricordato.</p></div></div><div className="theme-options" aria-label="Tema dell'app">{themes.map(theme => <button key={theme.value} type="button" aria-label={theme.aria} aria-pressed={snapshot.settings.theme === theme.value} className={snapshot.settings.theme === theme.value ? 'selected' : ''} disabled={busy} onClick={() => update({theme: theme.value}).catch(() => {})}>{theme.icon}<span>{theme.label}</span>{snapshot.settings.theme === theme.value && <Check size={14}/>}</button>)}</div></section>
@@ -369,6 +343,8 @@ export default function App(): ReactNode {
   const [notice, setNotice] = useState<Notice>(null)
   const [busy, setBusy] = useState<Set<string>>(() => new Set())
   const [loadingDeps, setLoadingDeps] = useState(true)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const setupPrompted = useRef(false)
   const notify = useCallback((text: string, type: 'success' | 'error' = 'success') => setNotice({text, type}), [])
   const refresh = useCallback(async (): Promise<void> => {try {setSnapshot(await window.drive.snapshot())} catch (error) {notify(messageOf(error), 'error')}}, [notify])
   const refreshDependencies = useCallback(async (): Promise<void> => {
@@ -377,6 +353,12 @@ export default function App(): ReactNode {
     finally {setLoadingDeps(false)}
   }, [notify])
   useEffect(() => {void refresh(); void refreshDependencies(); return window.drive.onChanged(() => void refresh())}, [refresh, refreshDependencies])
+  useEffect(() => {
+    if (deps && !loadingDeps && !setupPrompted.current) {
+      setupPrompted.current = true
+      if (!deps.rclone.ok || deps.remotes.length === 0) setSetupOpen(true)
+    }
+  }, [deps, loadingDeps])
   useEffect(() => {if (snapshot) document.documentElement.dataset.theme = snapshot.dark ? 'dark' : 'light'}, [snapshot?.dark])
   useEffect(() => {if (!notice) return; const timer = setTimeout(() => setNotice(null), notice.type === 'error' ? 10000 : 4000); return () => clearTimeout(timer)}, [notice])
   const task = async (key: string, operation: () => Promise<unknown>, success?: string): Promise<void> => {
@@ -397,7 +379,10 @@ export default function App(): ReactNode {
   const compact = snapshot.windowMode === 'compact'
   const connected = snapshot.mounts.filter(m => m.status === 'connected').length
   const title = page === 'folders' ? 'Le mie cartelle' : page === 'settings' ? 'Impostazioni' : 'Attivit\u00e0'
-  const addFolder = (): void => setEditing(newMount(selectedRemote(deps?.remotes ?? [], snapshot.settings.defaultRemote)))
+  const addFolder = (): void => {
+    if (!deps?.rclone.ok || !deps.remotes.length) { setSetupOpen(true); return }
+    setEditing(newMount(selectedRemote(deps.remotes, snapshot.settings.defaultRemote)))
+  }
   const changeMode = (): Promise<void> => window.drive.setWindowMode(compact ? 'expanded' : 'compact').catch(error => notify(messageOf(error), 'error'))
   return <div className="app-shell" data-mode={snapshot.windowMode}>
     <aside className="sidebar"><Brand/><div className="sidebar-label">IL TUO SPAZIO</div><nav aria-label="Navigazione principale"><button className={`nav-item ${page === 'folders' ? 'selected' : ''}`} onClick={() => setPage('folders')}><LayoutGrid size={18}/><span>Le mie cartelle</span><b>{snapshot.mounts.length}</b></button><button className={`nav-item ${page === 'activity' ? 'selected' : ''}`} onClick={() => setPage('activity')}><Activity size={18}/><span>Attivit&agrave;</span></button></nav><div className="sidebar-bottom"><button className={`settings-link ${page === 'settings' ? 'selected' : ''}`} onClick={() => setPage('settings')}><Settings2 size={19}/><span><strong>Impostazioni</strong><small>Aspetto e connessione</small></span><ChevronRight size={16}/></button><span className="app-version">Drive Tambu {snapshot.appVersion}</span></div></aside>
@@ -409,7 +394,7 @@ export default function App(): ReactNode {
           {snapshot.mounts.length === 0 ? <div className="empty-state"><span className="empty-folder"><FolderOpen size={46}/></span><h2>Il tuo spazio inizia qui.</h2><p>Scegli una cartella sul server e ritrovala sul computer, senza scaricare tutto l'archivio.</p><Button kind="primary" disabled={loadingDeps} onClick={addFolder}>{loadingDeps ? <LoaderCircle size={17} className="spin"/> : <Plus size={17}/>} {loadingDeps ? 'Rilevo il server...' : 'Aggiungi la prima cartella'}</Button></div> : <div className="mount-list">{visible.map(m => <MountCard key={m.id} m={m} busy={busy.has(m.id)} onEdit={() => setEditing(m)} onOpen={() => void task('open', () => window.drive.openMount(m.id))} onToggle={() => void task(m.id, () => m.hasRuntime || m.status === 'connected' || m.status === 'connecting' ? window.drive.disconnect(m.id) : window.drive.connect(m.id))} onBackup={() => void task(m.id, () => window.drive.backupNow(m.id), 'Backup completato.')} onOpenBackup={() => void task('open-backup', () => window.drive.openBackup(m.id))}/>)}{visible.length === 0 && <div className="empty-list">Nessuna cartella corrisponde alla ricerca.</div>}</div>}
           <div className="privacy-note"><HardDrive size={15}/><span>I file restano sul server. Quelli aperti possono occupare spazio temporaneo sul computer.</span></div>
         </div>}
-        {page === 'settings' && <SettingsPage snapshot={snapshot} deps={deps} busy={busy.has('settings')} onCheck={() => void refreshDependencies()} onSave={async values => {
+        {page === 'settings' && <SettingsPage snapshot={snapshot} deps={deps} busy={busy.has('settings') || !!snapshot.setupBusy} onSetup={() => setSetupOpen(true)} onCheck={() => void refreshDependencies()} onSave={async values => {
           setBusy(value => new Set(value).add('settings'))
           try {await window.drive.saveSettings(values);await refresh();void refreshDependencies()}
           finally {setBusy(value => {const next = new Set(value);next.delete('settings');return next})}
@@ -418,7 +403,11 @@ export default function App(): ReactNode {
       </main>
       <nav className="compact-nav" aria-label="Navigazione pannello"><button className={page === 'folders' ? 'selected' : ''} onClick={() => setPage('folders')}><Folder size={18}/><span>Cartelle</span></button><button className={page === 'activity' ? 'selected' : ''} onClick={() => setPage('activity')}><Activity size={18}/><span>Attivit&agrave;</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings2 size={18}/><span>Impostazioni</span></button></nav>
     </div>
-    {editing && <MountModal defaultRefreshSeconds={snapshot.settings.directoryRefreshSeconds} original={editing} remotes={deps?.remotes ?? []} platform={snapshot.platform} onClose={() => setEditing(null)} onSave={saveMount} onDelete={deleteMount} onSettings={() => {setEditing(null); setPage('settings')}}/>}
+    {editing && <MountModal defaultRefreshSeconds={snapshot.settings.directoryRefreshSeconds} original={editing} remotes={deps?.remotes ?? []} remoteLabels={deps?.remoteLabels} platform={snapshot.platform} onClose={() => setEditing(null)} onSave={saveMount} onDelete={deleteMount} onSettings={() => {setEditing(null); setPage('settings')}}/>}
+    {setupOpen && <SetupWizard onClose={() => setSetupOpen(false)} onSaved={async connection => {
+      await refreshDependencies(); await refresh(); setSetupOpen(false); setPage('folders'); setEditing(newMount(connection.remote))
+      notify('Connessione salvata. Scegli la cartella da collegare.')
+    }}/>}
     {snapshot.operation && <OperationDialog operation={snapshot.operation} onReply={reply => window.drive.respondToOperation(snapshot.operation!.id, reply).catch(error => notify(messageOf(error), 'error'))}/>}
     {notice && <div className={`toast toast-${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>{notice.type === 'error' ? <CircleAlert size={18}/> : <CircleCheck size={18}/>}<span>{notice.text}</span><button aria-label="Chiudi notifica" onClick={() => setNotice(null)}><X size={16}/></button></div>}
   </div>

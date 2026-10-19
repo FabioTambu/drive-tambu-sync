@@ -85,3 +85,8 @@ test('operation pause preserves a running backup and stop refuses to interrupt i
   assert.equal(syncs[0].child.exitCode,null)
  }finally{finish();await p;manager.resumeScheduling();manager.stop()}
 })
+test('managed backup precheck and sync route to the private connection',async t=>{
+ const p=require('./helpers/managed-profile.cjs')(t),{manager,store,m}=fixture();store.saveMount({...m,remote:p.remote})
+ const pending=manager.run(m.id);await waitForSync();const args=syncs.at(-1).args;finish();await pending
+ assert.equal(args[args.indexOf('--config')+1],p.config)
+})

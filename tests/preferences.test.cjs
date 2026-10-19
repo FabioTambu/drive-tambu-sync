@@ -66,3 +66,7 @@ test('editing an unchanged schedule displays its saved appointment, not a new in
  const expected=new Date(next).toLocaleString('it-IT',{dateStyle:'short',timeStyle:'short'})
  assert.ok(text(ui.render()).includes(expected))
 })
+test('managed connection names are shown in folder setup instead of opaque identifiers',()=>{
+ const id='dt_'+'c'.repeat(32),r=renderComponent('MountModal',{original:{...m,remote:id},remotes:[id],remoteLabels:{[id]:'My home'},onClose(){},onSave:async()=>{},onDelete:async()=>true,onSettings(){}})
+ assert.match(text(r.render()),/My home/)
+})

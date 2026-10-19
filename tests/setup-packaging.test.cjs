@@ -1,0 +1,42 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
+test('native bundle preparation rejects mismatched hashes and untrusted executable origins',()=>{
+ const p=path.join(__dirname,'../scripts/prepare-vendor.cjs');assert.ok(fs.existsSync(p),'vendor build preparation is implemented')
+ const {verifyBytes,validateArtifact}=require(p)
+ assert.throws(()=>verifyBytes(Buffer.from('wrong'),'0'.repeat(64)),/checksum|integrit/i)
+ assert.throws(()=>validateArtifact({url:'http://downloads.rclone.org/tool',sha256:'0'.repeat(64)}),/HTTPS/)
+ assert.throws(()=>validateArtifact({url:'https://evil.example/tool',sha256:'0'.repeat(64)}),/origin|host/i)
+})
+test('distribution scripts include pinned official tools and native Debian dependencies',()=>{
+ const p=require('../package.json');assert.match(p.scripts['dist:win'],/prepare:vendor/);assert.match(p.scripts['dist:linux'],/prepare:vendor/)
+ assert.ok(p.build.deb.depends.includes('fuse3'));assert.ok(p.build.deb.depends.includes('openssh-client'));assert.ok(!p.build.deb.depends.includes('rclone'))
+ const m=require('../resources/vendor-manifest.json');assert.equal(m.rcloneVersion,'1.74.4')
+ for(const os of ['linux','win32'])for(const a of m.platforms[os]){assert.match(a.sha256,/^[a-f0-9]{64}$/);assert.ok(!a.url.includes('/latest/'))}
+})
+test('ZIP extraction uses an exact entry and refuses missing or truncated payloads',()=>{
+ const {zipMember}=require('../scripts/prepare-vendor.cjs'),name=Buffer.from('package/rclone'),bytes=Buffer.from('executable-test-bytes')
+ const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt32LE(bytes.length,18);local.writeUInt32LE(bytes.length,22);local.writeUInt16LE(name.length,26)
+ const central=Buffer.alloc(46);central.writeUInt32LE(0x02014b50);central.writeUInt32LE(bytes.length,20);central.writeUInt32LE(bytes.length,24);central.writeUInt16LE(name.length,28)
+ const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(1,10);end.writeUInt32LE(central.length+name.length,12);end.writeUInt32LE(local.length+name.length+bytes.length,16)
+ const zip=Buffer.concat([local,name,bytes,central,name,end]);assert.deepEqual(zipMember(zip,'package/rclone'),bytes)
+ assert.throws(()=>zipMember(zip,'../rclone'),/missing/);assert.throws(()=>zipMember(zip.subarray(0,20),'package/rclone'))
+})
+test('bundle version matches the pinned native mount verification baseline',()=>{
+ const m=require('../resources/vendor-manifest.json');assert.equal(m.rcloneVersion,'1.74.4')
+})
+test('afterPack refuses incomplete or changed executable payloads',async t=>{
+ const file=path.join(__dirname,'../scripts/verify-vendor.cjs');assert.ok(fs.existsSync(file),'packaging has an afterPack verification gate')
+ const verify=require(file),os=require('node:os'),crypto=require('node:crypto'),root=fs.mkdtempSync(path.join(os.tmpdir(),'dt-package-'))
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const vendor=path.join(root,'resources','vendor');fs.mkdirSync(vendor,{recursive:true})
+ const records=['rclone','cloudflared'].map(name=>({file:name,sha256:crypto.createHash('sha256').update(name).digest('hex')}))
+ fs.writeFileSync(path.join(vendor,'runtime-manifest.json'),JSON.stringify({platform:'linux',arch:'x64',files:records}))
+ await assert.rejects(verify({appOutDir:root,electronPlatformName:'linux'}))
+ for(const r of records)fs.writeFileSync(path.join(vendor,r.file),r.file)
+ await verify({appOutDir:root,electronPlatformName:'linux'})
+ fs.writeFileSync(path.join(vendor,'rclone'),'modified');await assert.rejects(verify({appOutDir:root,electronPlatformName:'linux'}),/integrit|checksum/i)
+})
+test('build workflow runs real private SFTP setup on hosted test machines before uploading installers',()=>{
+ const workflow=fs.readFileSync(path.join(__dirname,'../.github/workflows/build.yml'),'utf8'),native=path.join(__dirname,'native/setup.cjs')
+ assert.ok(fs.existsSync(native),'native SFTP setup test exists');assert.ok(workflow.indexOf('tests/native/setup.cjs')>0)
+ assert.ok(workflow.indexOf('tests/native/setup.cjs')<workflow.indexOf('actions/upload-artifact'))
+ const code=fs.readFileSync(native,'utf8');assert.match(code,/assertHostedRunner\(\)/);assert.match(code,/new ConnectionSetup/);assert.match(code,/127\.0\.0\.1/)
+})
