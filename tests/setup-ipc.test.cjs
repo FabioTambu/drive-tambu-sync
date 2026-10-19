@@ -26,7 +26,7 @@ test('setup blocks concurrent changes and quitting; background cannot resume sch
 
 test('key picker opens in the local SSH directory and setup exposes only common key filenames',async t=>{
  const fs=require('node:fs'),path=require('node:path')
- const h=await launchHarness(t,{status:'disconnected',platform:'linux'})
+ const h=await launchHarness(t,{status:'disconnected',platform:process.platform})
  const home=h.app.getPath('home'),directory=path.join(home,'.ssh')
  fs.mkdirSync(directory)
  fs.writeFileSync(path.join(directory,'id_ed25519'),'test fixture')
@@ -40,7 +40,7 @@ test('key picker opens in the local SSH directory and setup exposes only common 
 
 test('dependency installation keeps SSH key suggestions in the refreshed setup report',async t=>{
  const fs=require('node:fs'),path=require('node:path')
- const h=await launchHarness(t,{status:'disconnected',platform:'linux',setupComponents:{platform:'linux',components:[],canInstall:false,installationNote:'OK'}})
+ const h=await launchHarness(t,{status:'disconnected',platform:process.platform,setupComponents:{platform:process.platform,components:[],canInstall:false,installationNote:'OK'}})
  const home=h.app.getPath('home'),directory=path.join(home,'.ssh')
  fs.mkdirSync(directory);fs.writeFileSync(path.join(directory,'id_rsa'),'test fixture')
  const report=await h.invoke('drive:installComponents')
