@@ -74,9 +74,25 @@ test('snapshot forwards backup statistics and the refresh-reconnect notice',asyn
 test('Create shortcut is a guarded IPC operation and writes the chosen launcher',async()=>{
   await ready();const handler=handlers.get('drive:createShortcut');assert.equal(typeof handler,'function')
   await assert.rejects(handler({sender:{}} ,'shortcut-123'),/autorizzata/)
+  const originalExecPath = process.execPath
   app.isPackaged=true
-  try {const result=await handler(event(),'shortcut-123');assert.equal(result,shortcutFile);assert.ok(fs.readFileSync(result,'utf8').includes('--open-folder shortcut-123'))}
-  finally {app.isPackaged=false}
+  // On Windows the installed application is Drive Tambu.exe, not the Node.exe test runner.
+  // The inventory intentionally refuses shortcuts pointing at arbitrary executables.
+  if (process.platform === 'win32') process.execPath = path.join(tmp, 'Drive Tambu.exe')
+  try {
+    const result=await handler(event(),'shortcut-123')
+    assert.equal(result,shortcutFile)
+    assert.ok(fs.readFileSync(result,'utf8').includes('--open-folder shortcut-123'))
+    if (process.platform === 'win32') {
+      const inventory = JSON.parse(fs.readFileSync(path.join(tmp,'shortcuts-v1.json'),'utf8'))
+      assert.equal(inventory.shortcuts.length,1)
+      assert.equal(inventory.shortcuts[0].target,process.execPath)
+      assert.equal(inventory.shortcuts[0].id,'shortcut-123')
+    }
+  } finally {
+    process.execPath=originalExecPath
+    app.isPackaged=false
+  }
 })
 test('second-instance shortcut arguments open the saved folder in the existing app',async()=>{
   await ready();app.emit('second-instance',{},['drive-tambu','--open-folder','shortcut-123']);await ready()
