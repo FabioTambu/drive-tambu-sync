@@ -15,6 +15,7 @@ async function launchHarness(t, options = {}) {
   let preflightKind = options.preflightKind || 'confirm'
   const platform = options.platform || 'win32'
   const executable = path.join(root, 'Programs', 'Drive Tambu', 'Drive Tambu.exe')
+  if (options.nativeLauncher) { fs.mkdirSync(path.dirname(executable), {recursive:true});fs.writeFileSync(path.join(path.dirname(executable),'DriveTambuShortcut.exe'),'test binary placeholder') }
   const processView = {platform, argv: options.argv || [executable], execPath: executable, resourcesPath: path.join(root, 'resources'), env: {}}
   const mount = {id, name: 'Files', remote: 'probe', remotePath: '/files', localPath, autoConnect: false, backup: {enabled: false, intervalMinutes: 0, destination: '', retentionDays: 30}}
   fs.writeFileSync(path.join(root, 'config.json'), JSON.stringify({schemaVersion: 1, settings: {rcloneExecutable: 'unused', cacheMaxSize: '5G', theme: 'system', defaultRemote: 'probe', startAtLogin: false, closeToTray: true, directoryRefreshSeconds: 120}, mounts: [mount]}))
@@ -65,6 +66,7 @@ async function launchHarness(t, options = {}) {
   const nativeMounts = {checkMountDestination() {}, MountManager: class {
     state() { return {status, detail: ''} }
     hasRuntime() { return status !== 'disconnected' }
+    isFastPathReady() { return status === 'connected' }
     needsRefreshReconnect() { return false }
     async connect(folderId) { calls.connected.push(folderId); if (options.connect) await options.connect(); status = 'connected' }
     async preflight() { return {kind: preflightKind, message: 'Test transfer status'} }
@@ -80,6 +82,7 @@ async function launchHarness(t, options = {}) {
       if (name === 'electron') return electron
       if (file.endsWith(path.join('main', 'index.ts')) && name === './mounts') return nativeMounts
       if (file.endsWith(path.join('main', 'index.ts')) && name === './backups') return {BackupManager: class {startScheduler() {} pauseScheduling() {calls.paused++} resumeScheduling() {calls.resumed++} stop() {} state() { return {status: 'idle', detail: ''} }}}
+      if (name === './shortcut-fastpath') return {...load(path.resolve(path.dirname(file),name+'.ts')), startShortcutHost: () => () => {}}
       if (name === './setup-process' && options.runSetup) return {runSetupTool:options.runSetup}
       if (name === './setup-dependencies' && options.setupComponents) return {inspectComponents:async()=>options.setupComponents,installComponents:async()=>options.setupComponents}
       if (name === './diagnostics' && options.runRclone) return {...load(path.resolve(path.dirname(file),name+'.ts')),runRclone:options.runRclone}
@@ -93,7 +96,7 @@ async function launchHarness(t, options = {}) {
   const settle = () => new Promise(resolve => setImmediate(resolve))
   await settle()
   const event = () => ({sender: windows[0].webContents, senderFrame: windows[0].webContents.mainFrame})
-  return {id, localPath, calls, windows, trays, app, destination, settle,
+  return {id, root, localPath, calls, windows, trays, app, destination, settle,
     invoke: (channel, ...args) => handlers.get(channel)(event(), ...args),
     snapshot: () => handlers.get('drive:snapshot')(event()),
     setPreflight: value => {preflightKind = value},

@@ -1,6 +1,6 @@
 {
   "name": "drive-tambu",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "description": "Drive Tambu: cartelle remote come locali, con rclone e backup protetti",
   "author": "Drive Tambu fabio.tamburini.07@gmail.com",
@@ -11,10 +11,11 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:win": "npm run prepare:vendor -- --platform win32 && npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win": "npm run prepare:vendor -- --platform win32 && npm run build:native:win && npm run build && electron-builder --win nsis --x64 --publish never",
     "dist:linux": "npm run prepare:vendor -- --platform linux && npm run build && electron-builder --linux deb AppImage --x64 --publish never",
     "test": "node -r ./tests/register.cjs --test tests/*.test.cjs",
-    "prepare:vendor": "node scripts/prepare-vendor.cjs"
+    "prepare:vendor": "node scripts/prepare-vendor.cjs",
+    "build:native:win": "node scripts/build-native-win.cjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -59,6 +60,12 @@
         {
           "from": "resources/vendor/win32-x64",
           "to": "vendor"
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "resources/native/win32-x64/DriveTambuShortcut.exe",
+          "to": "DriveTambuShortcut.exe"
         }
       ]
     },

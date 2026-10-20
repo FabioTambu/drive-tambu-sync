@@ -12,3 +12,6 @@ release/
 resources/vendor/
 
 .setup-probe-results/
+
+# Compiled Windows shortcut launcher (built on the Windows CI runner).
+resources/native/

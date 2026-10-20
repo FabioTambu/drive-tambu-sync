@@ -45,6 +45,11 @@ export class MountManager {
     const s=this.mounts.get(id);return {status:s?.status ?? 'disconnected',detail:s?.detail ?? 'Non collegata'}
   }
   hasRuntime(id:string): boolean {const s=this.mounts.get(id);return !!s && (!!s.child || s.requested || s.uncertain)}
+  /** Read-only native-shortcut guard; no remote file probes or mount state transitions. */
+  isFastPathReady(id:string): boolean {
+    const s=this.mounts.get(id)
+    return !!s && s.status==='connected' && !!s.child && !!s.client && s.mounted && !s.requested && !s.uncertain && !s.stopping
+  }
   needsRefreshReconnect(id:string):boolean {
     const s=this.mounts.get(id);return !!s && ['connected','connecting'].includes(s.status) && s.refreshSeconds!==undefined && s.refreshSeconds!==effectiveRefreshSeconds(this.store.find(id),this.store.settings)
   }

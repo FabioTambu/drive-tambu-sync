@@ -29,6 +29,10 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run typecheck
+      - name: Verify standalone uninstall helper on Windows
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File build/uninstall-cleanup.ps1 -SelfTest
       - run: npm run dist:${{ matrix.target }}
       - name: Verify real SSH and private SFTP setup on disposable runner
         run: node -r ./tests/register.cjs tests/native/setup.cjs

@@ -31,14 +31,21 @@
 
 !ifdef BUILD_UNINSTALLER
   Var dtResetCheckbox
+  Var dtLinksCheckbox
+  Var dtBackupsCheckbox
+  Var dtManageButton
   Var dtResetSelected
+  Var dtLinksSelected
+  Var dtBackupsSelected
   Var dtResetAllowed
   Var dtPage
 
   !macro customUnInit
     StrCpy $dtResetSelected 0
+    StrCpy $dtLinksSelected 0
+    StrCpy $dtBackupsSelected 0
     StrCpy $dtResetAllowed 0
-    ; Reject the stock broad deletion flag: reset is deliberately an exact allowlist.
+    ; Reject stock delete-app-data flag: this uninstaller uses an exact allowlist.
     ClearErrors
     ${GetParameters} $R0
     ${GetOptions} $R0 "--delete-app-data" $R1
@@ -46,7 +53,7 @@
       SetErrorLevel 2
       Quit
     ${EndIf}
-    ; An elevated/different account must not clean a profile belonging to somebody else.
+    ; Do not clean a different account, an elevated install or an update.
     ReadRegStr $R0 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
     ${If} $R0 == $INSTDIR
     ${AndIf} $installMode == "CurrentUser"
@@ -58,8 +65,11 @@
     UninstPage custom un.DriveSettingsPage un.DriveSettingsLeave
   !macroend
 
-  ; The stock script inserts this hook after MUI2 and its pages are initialized.
   !macro customHeader
+  Function un.OpenComponents
+    ExecShell open "ms-settings:appsfeatures"
+  FunctionEnd
+
   Function un.DriveSettingsPage
     ${If} ${Silent}
       Abort
@@ -67,64 +77,41 @@
     ${If} ${isUpdated}
       Abort
     ${EndIf}
-    !insertmacro MUI_HEADER_TEXT "Disinstalla Drive Tambu" "Scegli se conservare le impostazioni per una futura installazione."
+    !insertmacro MUI_HEADER_TEXT "Disinstalla Drive Tambu" "Scegli quali dati conservare. Tutte le opzioni sono disattivate."
     nsDialogs::Create 1018
     Pop $dtPage
     ${If} $dtPage == error
       Abort
     ${EndIf}
-    ${NSD_CreateLabel} 0u 0u 100% 32u "I file sul server, i backup locali e le credenziali restano al loro posto."
+    ${NSD_CreateLabel} 0u 0u 100% 26u "I file sul server e le installazioni autonome di rclone, OpenSSH e WinFsp non saranno rimossi."
     Pop $R0
-    ${NSD_CreateCheckbox} 0u 42u 100% 28u "Elimina anche le impostazioni di Drive Tambu"
+    ${NSD_CreateCheckbox} 0u 33u 100% 18u "Elimina impostazioni"
     Pop $dtResetCheckbox
     ${NSD_Uncheck} $dtResetCheckbox
+    ${NSD_CreateCheckbox} 0u 55u 100% 18u "Elimina collegamenti creati dall'app"
+    Pop $dtLinksCheckbox
+    ${NSD_Uncheck} $dtLinksCheckbox
+    ${NSD_CreateCheckbox} 0u 77u 100% 18u "Elimina backup verificati (anteprima e seconda conferma)"
+    Pop $dtBackupsCheckbox
+    ${NSD_Uncheck} $dtBackupsCheckbox
     ${If} $dtResetAllowed != 1
       EnableWindow $dtResetCheckbox 0
+      EnableWindow $dtLinksCheckbox 0
+      EnableWindow $dtBackupsCheckbox 0
     ${EndIf}
-    ${NSD_CreateLabel} 0u 80u 100% 44u "Senza spunta ritroverai le cartelle e le preferenze alla reinstallazione. La spunta rimuove solo le impostazioni di questo utente, non la cache dei trasferimenti."
+    ${NSD_CreateLabel} 0u 103u 100% 43u "Solo i percorsi riconosciuti saranno eliminabili. Per i backup verra richiesta una conferma esplicita di cancellazione di TUTTO il contenuto, inclusi file personali aggiunti manualmente."
     Pop $R0
+    ${NSD_CreateButton} 0u 152u 75% 24u "Gestisci componenti di sistema"
+    Pop $dtManageButton
+    ${NSD_OnClick} $dtManageButton un.OpenComponents
     nsDialogs::Show
   FunctionEnd
 
   Function un.DriveSettingsLeave
     ${NSD_GetState} $dtResetCheckbox $dtResetSelected
+    ${NSD_GetState} $dtLinksCheckbox $dtLinksSelected
+    ${NSD_GetState} $dtBackupsCheckbox $dtBackupsSelected
   FunctionEnd
-
-  ; $R3 is one known configuration directory. No recursion and no wildcards.
-  Function un.RemoveDrivePreferences
-    System::Call 'kernel32::GetFileAttributesW(w "$R3") i.s'
-    Pop $R4
-    ${If} $R4 == -1
-      Return
-    ${EndIf}
-    IntOp $R5 $R4 & 0x400 ; FILE_ATTRIBUTE_REPARSE_POINT
-    ${If} $R5 != 0
-      Return
-    ${EndIf}
-    StrCpy $R6 "$R3\config.json"
-    Call un.RemoveOnePreference
-    StrCpy $R6 "$R3\config.json.before-0.2.bak"
-    Call un.RemoveOnePreference
-    StrCpy $R6 "$R3\config.json.before-0.3.bak"
-    Call un.RemoveOnePreference
-  FunctionEnd
-
-  Function un.RemoveOnePreference
-    System::Call 'kernel32::GetFileAttributesW(w "$R6") i.s'
-    Pop $R4
-    ${If} $R4 == -1
-      Return
-    ${EndIf}
-    IntOp $R5 $R4 & 0x410 ; refuse reparse points and directories
-    ${If} $R5 == 0
-      ClearErrors
-      Delete "$R6"
-      ${If} ${Errors}
-        DetailPrint "Impostazione non rimossa: $R6"
-      ${EndIf}
-    ${EndIf}
-  FunctionEnd
-
   !macroend
 
   !macro customUnInstall
@@ -132,12 +119,20 @@
     ${AndIfNot} ${isUpdated}
     ${AndIf} $dtResetAllowed == 1
     ${AndIf} $installMode == "CurrentUser"
-    ${AndIf} $dtResetSelected == ${BST_CHECKED}
-      ; The app-running check runs before this hook, also for manual uninstall.
-      StrCpy $R3 "$APPDATA\Drive Tambu"
-      Call un.RemoveDrivePreferences
-      StrCpy $R3 "$APPDATA\drive-tambu"
-      Call un.RemoveDrivePreferences
+      ${If} $dtResetSelected == ${BST_CHECKED}
+      ${OrIf} $dtLinksSelected == ${BST_CHECKED}
+      ${OrIf} $dtBackupsSelected == ${BST_CHECKED}
+        ; Stage into NSIS's private temporary directory before $INSTDIR is removed.
+        ; The script independently verifies REPARSE_POINT, FileId, marker and paths.
+        ; Exact known settings: config.json, config.json.before-0.2.bak,
+        ; config.json.before-0.3.bak, shortcuts-v1.json, connections-v1.
+        InitPluginsDir
+        File /oname=$PLUGINSDIR\uninstall-cleanup.ps1 "${BUILD_RESOURCES_DIR}\uninstall-cleanup.ps1"
+        ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PLUGINSDIR\uninstall-cleanup.ps1" -InstallDir "$INSTDIR" -RemovePreferences $dtResetSelected -RemoveShortcuts $dtLinksSelected -RemoveBackups $dtBackupsSelected' $R0
+        ${If} $R0 != 0
+          DetailPrint "Pulizia facoltativa annullata o incompleta ($R0). I dati non riconosciuti vengono conservati."
+        ${EndIf}
+      ${EndIf}
     ${EndIf}
   !macroend
 !endif

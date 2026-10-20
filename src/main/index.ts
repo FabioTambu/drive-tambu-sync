@@ -17,6 +17,8 @@ import type { SetupReport } from '../shared/setup'
 import { normalizeRemotePath } from '../shared/paths'
 import { layoutBounds } from './window-layout'
 import { requestedFolder, forwardedShortcutArguments, SavedFolderOpener, shortcutName, writeLinuxShortcut } from './shortcuts'
+import { fastPathReply, startShortcutHost } from './shortcut-fastpath'
+import { recordShortcut } from './shortcut-inventory'
 import type { AppSettings, MountConfig, Snapshot, WindowMode, OperationReply } from '../shared/types'
 
 let window: BrowserWindow | null = null
@@ -33,6 +35,8 @@ let connectionSetup: ConnectionSetup
 let setupBusy = false
 let nativeDialogDepth = 0
 let mode: WindowMode = 'compact'
+let stopShortcutHost: (() => void) | null = null
+let compactOnNextShowAfterClose = false
 const logLines: string[] = []
 const browsing = new Map<string, AbortController>()
 const wayland = process.platform === 'linux' && (!!process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland')
@@ -91,6 +95,11 @@ function positionWindow(): void {
   window.setAlwaysOnTop(mode === 'compact' && process.platform === 'win32')
 }
 function showWindow(): void {
+  if (compactOnNextShowAfterClose) {
+    compactOnNextShowAfterClose = false
+    mode = 'compact'
+    changed()
+  }
   if (!window || window.isDestroyed()) { createWindow(); return }
   if (mode === 'compact') positionWindow()
   window.show()
@@ -99,6 +108,7 @@ function showWindow(): void {
 }
 function setMode(next: WindowMode): void {
   if (next !== 'compact' && next !== 'expanded') throw new Error('Modalita della finestra non valida.')
+  compactOnNextShowAfterClose = false
   mode = next
   positionWindow(); showWindow(); changed()
 }
@@ -150,8 +160,12 @@ function createWindow(showOnReady = true): void {
   window.on('close', event => {
     if (exiting) return
     event.preventDefault()
-    if (store.settings.closeToTray) hideWindow()
-    else app.quit()
+    if (store.settings.closeToTray) {
+      // Only the X-to-tray action schedules compact reopening; temporary hiding does not.
+      // Do not change the layout while guarded operations or native dialogs are active.
+      if (tray && mode === 'expanded' && !operations?.busy && !setupBusy && nativeDialogDepth === 0) compactOnNextShowAfterClose = true
+      hideWindow()
+    } else app.quit()
   })
   if (process.env.ELECTRON_RENDERER_URL) void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void window.loadFile(path.join(__dirname, '../renderer/index.html'))
@@ -420,11 +434,16 @@ function registerHandlers(): void {
       if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Scegli un nuovo file: la destinazione non e un file regolare.')
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (process.platform === 'win32') {
+      const nativeLauncher = path.join(path.dirname(process.execPath), 'DriveTambuShortcut.exe')
+      const nativeReady = existsSync(nativeLauncher)
+      const target = nativeReady ? nativeLauncher : process.execPath
+      const args = nativeReady ? `--open-folder ${m.id}` : `-- --open-folder ${m.id}`
       const ok = shell.writeShortcutLink(destination, 'create', {
-        target: process.execPath, args: `-- --open-folder ${m.id}`, cwd: path.dirname(process.execPath),
+        target, args, cwd: path.dirname(process.execPath),
         description: `Apri ${m.name} con Drive Tambu`, icon: process.execPath, iconIndex: 0
       })
       if (!ok) throw new Error('Non riesco a creare il collegamento. Scegli una posizione in cui puoi scrivere.')
+      recordShortcut(app.getPath('userData'), destination, m.id, target, args)
     } else if (process.platform === 'linux') {
       writeLinuxShortcut(destination, process.env.APPIMAGE || process.execPath, m.id, m.name)
     } else throw new Error('Questo sistema non e supportato per i collegamenti.')
@@ -452,6 +471,7 @@ app.on('before-quit', event => {
   })
 })
 app.on('window-all-closed', () => { if (!tray) app.quit() })
+app.on('will-quit', () => { stopShortcutHost?.();stopShortcutHost=null })
 
 app.whenReady().then(() => {
   try {
@@ -477,6 +497,15 @@ app.whenReady().then(() => {
       find: id => store.find(id), state: id => mounts.state(id), connect: id => mounts.connect(id),
       open: target => shell.openPath(target), stopping: () => exiting || cleanupStarted || operations.busy || setupBusy
     })
+    if (process.platform === 'win32' && app.isPackaged) {
+      const nativeLauncher = path.join(path.dirname(process.execPath), 'DriveTambuShortcut.exe')
+      if (existsSync(nativeLauncher)) {
+        stopShortcutHost = startShortcutHost(nativeLauncher, {
+          find: id => store.find(id), ready: id => mounts.isFastPathReady(id),
+          blocked: () => exiting || cleanupStarted || operations.busy || setupBusy || pendingSaves > 0
+        }, log)
+      }
+    }
     applyTheme()
     nativeTheme.on('updated', () => {
       window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151821' : '#f6f8fc'); changed()

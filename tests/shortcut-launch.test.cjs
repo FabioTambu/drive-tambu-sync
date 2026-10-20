@@ -145,3 +145,63 @@ test('a newly generated Windows shortcut includes -- and opens without a panel f
   assert.deepEqual(h.calls.opened, [h.localPath])
   assert.equal(h.calls.shown, 0)
 })
+
+test('closing an expanded window with X leaves it hidden and the next ordinary opening is compact', async t => {
+  const h = await launchHarness(t)
+  await h.invoke('drive:setWindowMode', 'expanded')
+  assert.equal(h.snapshot().windowMode, 'expanded')
+  let prevented = false
+  h.windows[0].emit('close', {preventDefault() {prevented = true}})
+  assert.equal(prevented, true)
+  assert.equal(h.windows[0].isVisible(), false)
+  // The window stays expanded while hidden; the reset happens on the next normal show.
+  assert.equal(h.snapshot().windowMode, 'expanded')
+  await h.secondary(['Drive Tambu.exe'])
+  assert.equal(h.snapshot().windowMode, 'compact')
+  assert.equal(h.windows[0].isVisible(), true)
+  assert.deepEqual(h.calls.opened, [])
+})
+
+test('temporary hiding never changes expanded mode on normal reopening', async t => {
+  const h = await launchHarness(t)
+  await h.invoke('drive:setWindowMode', 'expanded')
+  await h.invoke('drive:hideWindow')
+  await h.secondary(['Drive Tambu.exe'])
+  assert.equal(h.snapshot().windowMode, 'expanded')
+})
+
+test('explicit Apri finestra from tray overrides the pending compact reopening', async t => {
+  const h = await launchHarness(t)
+  await h.invoke('drive:setWindowMode', 'expanded')
+  h.windows[0].emit('close', {preventDefault() {}})
+  const expand = h.trays[0].menu.find(item => item.label === 'Apri finestra')
+  assert.ok(expand)
+  expand.click()
+  assert.equal(h.snapshot().windowMode, 'expanded')
+  await h.secondary(['Drive Tambu.exe'])
+  assert.equal(h.snapshot().windowMode, 'expanded')
+})
+
+test('closing during a blocked operation does not change the expanded mode', async t => {
+  const h = await launchHarness(t, {preflightKind: 'blocked'})
+  await h.invoke('drive:setWindowMode', 'expanded')
+  const request = h.invoke('drive:disconnect', h.id)
+  await h.settle()
+  assert.equal(h.snapshot().operation.phase, 'blocked')
+  h.windows[0].emit('close', {preventDefault() {}})
+  await h.secondary(['Drive Tambu.exe'])
+  assert.equal(h.snapshot().windowMode, 'expanded')
+  await h.invoke('drive:respondToOperation', h.snapshot().operation.id, 'cancel')
+  await request
+})
+
+test('new Windows shortcuts target the bundled fast launcher, record an inventory entry and retain the saved ID', async t => {
+  const h=await launchHarness(t, {nativeLauncher:true})
+  const file=await h.invoke('drive:createShortcut',id)
+  const link=JSON.parse(fs.readFileSync(file,'utf8'))
+  assert.match(link.target,/DriveTambuShortcut\.exe$/)
+  assert.equal(link.args,`--open-folder ${id}`)
+  const inventory=JSON.parse(fs.readFileSync(h.root+'/shortcuts-v1.json','utf8'))
+  assert.equal(inventory.shortcuts[0].id,id)
+  assert.equal(inventory.shortcuts[0].path,file)
+})
